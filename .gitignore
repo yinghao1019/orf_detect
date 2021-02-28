@@ -5,7 +5,4 @@ process/__pycache__/
 #Other
 .vscode/
 saved_model/
-Data/fakeJob/*.csv
-Data/fakeJob/*.npy
-Data/fakeJob/*.txt
-Data/fakeJob/test/*
+Data/fakeJob/fastText/*.vec
