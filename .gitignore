@@ -1,0 +1,11 @@
+#bytes compiled file
+__pycache__/
+process/__pycache__/
+
+#Other
+.vscode/
+saved_model/
+Data/fakeJob/*.csv
+Data/fakeJob/*.npy
+Data/fakeJob/*.txt
+Data/fakeJob/test/*
