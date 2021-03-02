@@ -4,5 +4,4 @@ process/__pycache__/
 
 #Other
 .vscode/
-saved_model/
 Data/fakeJob/fastText/*.vec
