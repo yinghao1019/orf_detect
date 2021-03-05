@@ -38,9 +38,9 @@ asc_p = re.compile(r'[^\w\.\-;\?!,\+\$./\>\<\[\]]+', flags=re.ASCII)
 punc_p = re.compile(r'([_\*\=-]+)|(\.{2,})')
 note_p=re.compile(r'\(.+?\)')
 emphasize_p = re.compile(r'<(em|strong|b)>')
-captial_p=re.compile(r"(\w)([A-Z])")
+captial_p=re.compile(r"([a-z])([A-Z])")
 money_p = re.compile(r'\$\d+')
-
+detect_link=re.compile('LINK')
 #define rule based func
 def replace_link(text):
     return link_p.sub('LINK', str(text))
@@ -68,7 +68,7 @@ def replace_escChar(text):
     text = text.replace('&quot;', ': ').replace(
         '&amp;', 'and ').replace('&It;', '< ')
     text = text.replace('&gt;', '> ').replace(
-        '&nbsp;', ' ').replace('&beta;', ' ')
+        '&nbsp;', ' ').replace('&beta;', ' ').replace('\xa0',' ')
     return text
 def remove_note(text):
     return note_p.sub(' ',str(text))
@@ -112,6 +112,9 @@ def replace_locName(text):
 
     return text
 
+def count_links(text):
+    '''Return LINK nums in text'''
+    return len(detect_link.findall(str(text)))
 
 '''Text process func'''
 def sent_process(sent):
@@ -128,10 +131,9 @@ def sent_process(sent):
 def remove_stopwords(sent):
   process_sent=[]
   for w in sent:
-    if (w not in en_stopwords) and (w not in string.punctuation) and w.isalpha():
+    if (w not in en_stopwords) and (w not in string.punctuation) and (w.isalpha()):
       process_sent.append(w)
   return process_sent
-
 def doc_process(doc):
   process_doc=[]
   for sent in doc.sents:
@@ -148,9 +150,10 @@ def corpus_process(data,nlp_pipe):
     #using nlp_pipeline to handle text
     data=list(map(lambda x:nlp_pipe(x) ,data))
     corpus=list(map(doc_process,data))
+    logger.info('Top 3 data {}'.format(corpus[:3]))
 
     return corpus
-# rule_map={"oilfied":"oil field","methodicallyMaintain":"methodically Maintain","skillsmotivated":"skills motivated","themYou":"them .You","businessAssisting":"business Assisting",
+# rule_map={"campaignsrun":"campaigns run ","methodicallyMaintain":"methodically Maintain","skillsmotivated":"skills motivated","themYou":"them .You","businessAssisting":"business Assisting",
 #           "CelebrationsLunchtime":"Celebrations Lunchtime","EnglishActive":"English Active","job Ceiling":"job Ceiling","GlanceA":"Glance A","ForBy":"For By",
 # "platformWork":"platform Work","fiit":"fit","ManagerBasic":"Manager Basic","resourcesExcellent":"resources Excellent"," skillsSysadmin":" skills Sysadmin",
 # "customersEstablish":"customers Establish","clientsyou":"clients you","projects Proficient":"projects proficient","routes An":"routes An","oilfied":"oil field"}
