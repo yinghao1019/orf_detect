@@ -11,55 +11,189 @@ from gensim.models.ldamulticore import LdaMulticore
 from gensim.corpora.dictionary import Dictionary
 from gensim.matutils import corpus2dense
 from process.text_process import sent_process,text_clean,count_links,remove_stopwords,doc_process
-from utils import load_edu_dict,load_job_dict,load_special_tokens,load_text_vocab,load_item_vocab
+from utils import load_edu_dict,load_job_dict,load_special_tokens,load_text_vocab,load_item_vocab,set_log_config
 from torch.utils.data import DataLoader,Dataset
 from torch.nn.utils.rnn import pad_sequence
-from collections import namedtuple
+from collections import namedtuple,defaultdict
 import torch
+
+#import module for testing data_loader
+import argparse
+from transformers import BertTokenizer
+
 #create logger
 logger=logging.getLogger(__name__)
+
 #define features field
-InputExample=namedtuple('InputExample',['cp_file','desc','require','benefits','title','has_link',
-                                        'has_logo','has_remote','job_level','edu_level','label'])
-InputFeature=namedtuple('InputFeature',['job_context','job_segment','cp_context','cp_segment',
-                                        'item_context','meta_data','label'])
-class FakeJobDataset(Dataset):
-    def __init__(self,examples):
+InputFeature=namedtuple('InputFeature',['cp_file','desc','require','benefits',
+                                        'title','meta_data','label'])
+BertFeature=namedtuple('BertFeature',['job_tokens','cp_tokens','job_segs','cp_segs',
+                                        'title','meta_data','label'])
+
+class BertDataset(Dataset):
+    def __init__(self,examples,model_name,lda_vocab_path,lda_model_path,args):
         self.data=examples
+        self.tokenizer=BertTokenizer.from_pretrained(model_name)
+        #add new special token
+        spec_tokens=load_special_tokens(args)
+        self.tokenizer.additional_special_tokens=spec_tokens
+        self.tokenizer.add_tokens(spec_tokens)
+        self.args=args
+        self.item_vocab=load_item_vocab(args)
+        self.lda_vocab=Dictionary.load(lda_vocab_path)
+        self.lda_model=LdaMulticore.load(lda_model_path)
+
+        self.sent_lim=[self.args.cp_sentNum,self.args.desc_sentNum,
+                        self.args.require_sentNum,self.args.benefit_sentNum]
+        self.text_fields=self.data[0]._fields[:4]
     def __getitem__(self,key):
         #fetch data
         example=self.data[key]
 
-        #seperate each data
-        job_context=example.job_context
-        job_segment=example.job_segment
-        cp_context=example.cp_context
-        cp_segment=example.cp_segment
+        #extract each data
+        wordN=[]
+        topics=[]
+        allToken_ids=[]
+        allSegment_ids=[]
 
-        item_context=example.item_context
-        meta_data=example.meta_data
+        for idx,(doc,max_sent) in enumerate(zip(example[:4],self.sent_lim)):
 
-        label=example.label
+            #count total word num for [cp_file,require]
+            if idx%2!=0:
+                word_num=len([w for sent in doc for w in sent])
+                wordN.append(word_num)
+            
+            #tokenize subword
+            subwords=[]
+            if doc:
+                for sent in doc[:max_sent]:
+                    for w in sent:
+                        subword=self.tokenizer.tokenize(w)
+                        if not subword:
+                            subword=[self.tokenizer.unk_token]
+                        subwords.extend(subword)
+            
+            #truncated subwords equal to max textLen
+            max_textLen=self.args.max_textLen-1
+            if len(subwords)>max_textLen:
+                subwords=subwords[:max_textLen]
+            
+            #add sep token & convert
+            subwords+=[self.tokenizer.sep_token]
+            token_ids=self.tokenizer.convert_tokens_to_ids(subwords)
+            segment_ids=[0 if idx<2 else 1]*len(token_ids)
 
-        return (job_context,job_segment,cp_context,cp_segment,item_context,meta_data,label)
+            allToken_ids.append(token_ids)
+            allSegment_ids.append(segment_ids)
+        
+        #combined data
+        job_tokens=[self.tokenizer.cls_token_id]+allToken_ids[1]+allToken_ids[2]
+        cp_tokens=[self.tokenizer.cls_token_id]+allToken_ids[0]+allToken_ids[3]
+        job_segs=[0]+allSegment_ids[1]+allSegment_ids[2]
+        cp_segs=[0]+allSegment_ids[0]+allSegment_ids[3]
+
+        #extract topics
+        desc_bow=[w for sent in example[1] for w in sent]
+        if desc_bow:
+            desc_bow=self.lda_vocab.doc2bow(desc_bow)
+            desc_topics=self.lda_model.get_document_topics(desc_bow)
+            desc_topics=corpus2dense([desc_topics],num_terms=self.lda_model.num_topics,num_docs=1).T.tolist()[0]
+        else:
+            desc_topics=[0.0]*self.lda_model.num_topics
+
+        #convert title text to index
+        item=[self.item_vocab.index(w) if w in self.item_vocab else self.item_vocab.index('[UNK]') for w in example.title]
+
+        #fetch other data=[title,meta_data,labels]
+        meta_data=example.meta_data+wordN+desc_topics
+        return BertFeature(job_tokens=job_tokens,cp_tokens=cp_tokens,job_segs=job_segs,
+                           cp_segs=cp_segs,title=item,meta_data=meta_data,label=example.label)
 
     def __len__(self):
         return len(self.data)
 
+class RnnDataset(Dataset):
+    def __init__(self,examples,vocab,lda_vocab_path,lda_model_path,args):
+        self.data=examples
+        self.vocab=vocab
+        self.args=args
+        self.item_vocab=load_item_vocab(args)
+        self.lda_vocab=Dictionary.load(lda_vocab_path)
+        self.lda_model=LdaMulticore.load(lda_model_path)
+        self.sent_lim=[self.args.cp_sentNum,self.args.desc_sentNum,
+                        self.args.require_sentNum,self.args.benefit_sentNum]
+    def __getitem__(self,key):
+        #fetch data
+        example=self.data[key]
+
+        #extract each data
+        wordN=[]
+        allToken_ids=[]
+
+        for idx,(doc,max_sent) in enumerate(zip(example[:4],self.sent_lim)):
+
+            #count total word num for [cp_file,require]
+            if idx%2!=0:
+                word_num=len([w for sent in doc for w in sent])
+                wordN.append(word_num)
+            
+            #tokenize subword
+            token_ids=[]
+            if doc:
+                for sent in doc[:max_sent]:
+                    for w in doc:
+                        if w in self.vocab:
+                            word_index=self.vocab.index(w)
+                        else:
+                            word_index=self.vocab.index('[UNK]')
+                        token_ids.append(word_index)
+
+                    #add sent bound
+                    token_ids.append(self.vocab.index('[SEP]'))
+
+            if len(token_ids)>self.args.max_textLen:
+                token_ids=token_ids[:self.args.max_textLen]
+
+            allToken_ids.append(token_ids)
+
+        #extract topics
+        desc_bow=[w for sent in example[1] for w in sent]
+        if desc_bow:
+            desc_bow=self.lda_vocab.doc2bow(desc_bow)
+            desc_topics=self.lda_model.get_document_topics(desc_bow)
+            desc_topics=corpus2dense([desc_topics],num_terms=self.lda_model.num_topics,num_docs=1).T.tolist()[0]
+        else:
+            desc_topics=[0.0]*self.lda_model.num_topics
+
+        #convert title to index
+        item=[self.item_vocab.index(w) if w in self.item_vocab else self.item_vocab.index('[UNK]') for w in example.title]
+        
+        #fetch other data=[meta_data,labels]
+        other_data=list(example[5:])
+        other_data[0]+=(wordN+desc_topics)#add feature[wordN,topics] to metadata
+        if len(other_data[0])==17:
+            print('Other_data',key)
+        #combine data
+        features=allToken_ids+[item]+other_data
+
+        #data memeber=(token_ids for 4 text fields,segment_ids for 4 text fields,
+        #               title,metadata,label)
+        return InputFeature._make(features)
+
+    def __len__(self):
+        return len(self.data)
 
 class process_data:
     def __init__(self,data,args):
         self.data=data
         self.job_level=load_job_dict(args)
         self.edu_level=load_edu_dict(args)
-        self.lda_vocab=Dictionary.load(os.path.join(args.saved_dir,args.process_dir,args.topic_model,args.lda_vocab))
-        self.lda_model=LdaMulticore.load(args.ldaModel_file)
         #load nlp piepline model
         spacy.require_gpu()
         self.nlp_pipe=spacy.load(args.nlp_model)
         self.args=args
     def __iter__(self):
-        for idx,data in enumerate(self.data.itertuples(name='example')):
+        for idx,data in enumerate(self.data):
             if idx%1000==0:
                 logger.info(f'Already clean & convert {idx} examples!')
             example=self.extract_data(data)
@@ -73,292 +207,117 @@ class process_data:
 
     def extract_data(self,data):
         #clean text 
-        cp_profile=text_clean(data.company_profile) if not np.isnan(data.company_profile) else ''
-        desc=text_clean(data.description) if not np.isnan(data.description) else ''
-        requires=text_clean(data.requirements) if not np.isnan(data.requirements) else ''
-        benefits=text_clean(data.benefits) if not np.isnan(data.benefits) else ''
+        cp_profile=text_clean(data.company_profile) if not pd.isna(data.company_profile) else ''
+        desc=text_clean(data.description) if not pd.isna(data.description) else ''
+        requires=text_clean(data.requirements) if not pd.isna(data.requirements) else ''
+        benefits=text_clean(data.benefits) if not pd.isna(data.benefits) else ''
         title=text_clean(data.title)
 
-        #create feature
+        #create meta feature
         has_descLink=1 if count_links(desc)!=0 else 0
         require_edu=self.edu_level[data.required_education] if data.required_education in self.edu_level else 0
         require_job=self.job_level[data.required_experience] if data.required_experience in self.job_level else 0
+        lower_edu=1 if 0<require_edu<self.args.edu_threshold else 0
+        lower_job=1 if 0<require_job<self.args.job_threshold else 0
+        meta_data=[has_descLink,require_edu,require_job,lower_edu,lower_job]
+        meta_data+=[data.has_company_logo,data.telecommuting]
 
         #tokenized text
-        cp_profile=[remove_stopwords(sent_process(sent)) for sent in self.nlp_pipe(cp_profile).sents] if cp_profile else []
-        desc=[remove_stopwords(sent_process(sent)) for sent in self.nlp_pipe(desc).sents] if desc else []
-        requires=[remove_stopwords(sent_process(sent)) for sent in self.nlp_pipe(requires).sents] if requires else []
-        benefits=[remove_stopwords(sent_process(sent)) for sent in self.nlp_pipe(benefits).sents] if benefits else []
-        title=doc_process(self.nlp_pipe(title))
+        cp_profile=doc_process(self.nlp_pipe(cp_profile)) if cp_profile else []
+        desc=doc_process(self.nlp_pipe(desc)) if desc else []
+        requires=doc_process(self.nlp_pipe(requires)) if requires else []
+        benefits=doc_process(self.nlp_pipe(benefits)) if benefits else []
+        title=[w for sent in doc_process(self.nlp_pipe(title)) for w in sent]
         
-        return InputExample(cp_file=cp_profile,desc=desc,require=requires,benefits=benefits,title=title,
-                            has_link=has_descLink,has_logo=data.has_company_logo,has_remote=data.telecommuting,
-                            job_level=require_job,edu_level=require_edu,label=data.fraudulent)
-
-
-
-def convert_BertFeature(data,tokenizer,cp_sentNum,desc_sentNum,
-                        require_sentNum,benefit_sentNum,max_textLen,
-                        cls_seg=0):
-    #build special tokens
-    unk_token=tokenizer.unk_token
-    sep_token=tokenizer.sep_token
-    cls_token=tokenizer.cls_token
-    column_sents={'job':[('desc',desc_sentNum),('require',require_sentNum)],
-                 'cp':[('cp_file',cp_sentNum),('benefits',benefit_sentNum)],
-                 }
-    #build dict for saving each data
-    save_dict={}
-
-    #max_len minus 1 because consider text containing cls token
-    max_textLen-=1
-
-    for f_name in ['job','cp']:
-        #init token ids
-        tokens=[cls_token]
-        segment_ids=[cls_seg]
-
-        for seg_id,(c_name,max_sent) in enumerate(columns[f_name]):
-            #build subword
-            subwords=[]
-            doc=getattr(data,c_name)#loading data
-
-            if doc:
-                for sent in doc[:max_sent]:
-                    for w in sent:
-                        subword=tokenizer.tokenize(w)
-
-                        if not subword:
-                            subword=[unk_token]
-                        
-                        subwords.extend(subword)
-            
-            #trunked subword len
-            max_seqLen=max_textLen//2
-            subwords=subwords[:max_seqLen-1]
-            #add sep_token
-            subwords.extend([sep_token])
-            #build segment id
-            tokens.extend(subwords)
-            segment_ids.extend([seg_id]*len(subwords))
-
-        #convert to token_ids
-        token_ids=tokenizer.convert_tokens_to_ids(tokens)
-        
-        assert len(token_ids)==len(segment_ids)
-
-        #save token_id,segment for field
-        save_dict[f_name+'_context']=token_ids
-        save_dict[f_name+'_segment']=segment_ids
-
-    return InputFeature(**save_dict)
-
-def convert_RnnFeature(data,vocab,cp_sentNum,desc_sentNum,
-                    require_sentNum,benefit_sentNum,max_textLen):
-    #build dict for saving each data                
-    save_dict={}
-    column_sents={'job':[('desc',desc_sentNum),('require',require_sentNum)],
-                 'cp':[('cp_file',cp_sentNum),('benefits',benefit_sentNum)],
-                 }
-    #max_len minus 1 because consider text containing cls token
-    max_textLen-=1
-    max_docLen=max_textLen//2
-
-    for f_name in list(column_sents.keys()):
-        #init token ids
-        text_ids=[]
-
-        for idx,(c_name,max_sent) in enumerate(column_sents[f_name]):
-            
-            #build subword
-            doc_tokens=[]
-            doc=getattr(data,c_name)
-
-            if doc:
-                for sent in doc[:max_sent]:
-                    sent_tokens=[]
-                    for w in sent:
-                        token_id=vocab.index(w) if w in vocab else vocab.index('UNK')
-                        sent_tokens.append(token_id)
-                    sent_tokens+=[vocab.index('[SEP]')]
-
-                    doc_tokens.extend(sent_tokens)
-
-                #truncated doc length
-                doc_tokens=doc_tokens[:max_docLen]
-
-                #replace last token to [SEP] token
-                doc_tokens[-1]=vocab.index('[SEP]')  if doc_tokens[-1]!=vocab.index('[SEP]')
-            
-            else:
-                #filled empty string value
-                doc_tokens.extend([vocab.index('PAD')]*max_docLen)
-
-            if idx==0:
-                doc_tokens+=[vocab.index('[CONTEXT]')]
-
-            text_ids.extend(doc_tokens)#combined text
-
-        assert len(text_ids)<=max_textLen
-
-        #saved contexts
-        save_dict[f_name+'_context']=text_ids
-    
-    return InputFeature(**save_dict)
-
-text_extractor={'bert':convert_BertFeature,'rnn':convert_RnnFeature}
-
-class transform_feature:
-    def __init__(self,text_type,lda_vocab_path,lda_model_path,args):
-        self.convert_text=text_extractor[text_type]
-        self.item_vocab=load_item_vocab(args)
-
-        #read lda_vocab & model
-        self.lda_vocab=Dictionary.load(lda_vocab_path)
-        self.lda_model=LdaMulticore.load(lda_model_path)
-
-    def convert_all_data(self,data,tokenizer,cp_maxNum,desc_maxNum,
-                         require_maxNum,benefits_maxNum,max_textLen):
-        all_data=[]
-        for idx,example in enumerate(data):
-
-            if idx%500==0:
-                logger.info(f'Already convert {idx} nums feature!')
-                logger.info('****display example****')
-                logger.info(all_data[idx-1])
-            #extract & convert job text
-            feature=self.convert_text(example,tokenizer,cp_maxNum,desc_maxNum,
-                                      require_maxNum,benefits_maxNum,max_textLen)
-
-            #combine meta data
-            meta_data=[]
-            for f_name in ['has_link','has_logo','has_remote','job_level','edu_level']:
-                meta_data.append(getattr(data,f_name))
-
-            #extract meta data(word num,is empty,topics)
-            for data in self.extract_metadata(example):
-                meta_data.extend(data)
-            
-            #convert to ids
-            item_tokenIds=[self.item_vocab.index(w) for w in example.title if w in self.item_vocab else 
-                           self.item_vocab.index('UNK')]
-            
-            
-            #set data attr
-            feature.meta_data=meta_data
-            feature.item_context=item_tokenIds
-            feature.label=example.label
-
-            all_data.append(feature)
-
-        return all_data
-            
-
-    def extract_metadata(self,example):
-        #extract topics
-        desc_doc=[w for sent in example.desc for w in sent] if example.desc else []
-        desc_bow=self.lda_vocab(desc_doc)
-        desc_topics=self.lda_model.get_document_topics(desc_bow)
-        desc_topics=corpus2dense([desc_topics],num_terms=self.lda_model.num_topics,num_docs=1).tolist()[0]
-
-        if not desc_topics:
-            desc_topics.extend([0.0]*self.lda_model.num_topics)
-
-        #compute each text total words
-        job_fields_wordN=[]
-        for f_name in ['cp_file','require','benefits']:
-            if getattr(example,f_name):
-                words=[w for sent in getattr(example,f_name) for w in sent]
-                wordN=len(words)
-            else:
-                wordN=0
-            job_fields_wordN.append(wordN)
-        
-        job_fields_wordN.insert(1,len(desc_doc))
-
-        #detect whether text is empty or not
-        cp_empty=1 if not example.cp_file else 0
-        require_empty=1 if not example.requires else 0
-
-
-        return job_fields_wordN,[cp_empty,require_empty],desc_topics
+        return InputFeature(cp_file=cp_profile,desc=desc,require=requires,benefits=benefits,title=title,
+                            meta_data=meta_data,label=data.fraudulent)
 
 def create_min_batch(tensors):
-    #get & convert to tensor
-    job_tensors=[d[0] for d in tensors]
-    cp_tensors=[d[2] for d in tensors]
-    item_tensors=[d[4] for d in tensors]
-    metaData_tensors=torch.stack([d[5] for d in tensors])
-    label_tensors=torch.stack([d[6] for d in tensors])
-
-    #pad  & transform tensors
-    job_tensors=pad_sequence(job_tokens,batch_first=True)
-    cp_tensors=pad_sequence(cp_tokens,batch_first=True)
-
-
-    if tensors[0][1]:
-
-        #pad  & transform tensors
-        jobSegment_tensors=[d[1] for d in tensors]
-        cpSegment_tensors=[d[3] for d in tensors]
-        jobSegment_tensors=pad_sequence(jobSegment_tensors,batch_first=True)
-        cpSegment_tensors=pad_sequence(cpSegment_tensors,batch_first=True)
-
+    batch_dict=defaultdict(list)
+    field_names=tensors[0]._fields
+    #get  tensor
+    if hasattr(tensors[0],'job_segs'):
+        #collect data
+        for example in tensors:
+            #convert to name-value pair
+            data_items=example._asdict().items()
+            for (f_name,data) in data_items:
+                batch_dict[f_name].append(torch.tensor(data))
         
-        #create mask tensors
-        jobMask_tensors=torch.ones(job_tensors.size(),dtype=torch.long).masked_fill_(job_tensors==0,0)
-        cpMask_tensors=torch.ones(job_tensors.size(),dtype=torch.long).masked_fill_(job_tensors==0,0)
+        #pad sequence for text tensors
+        for idx,f_name in enumerate(list(batch_dict.keys())[:4]):
+            batch_dict[f_name]=pad_sequence(batch_dict[f_name],batch_first=True)
+            #create mask tensors
+            if idx<2:
+                mask_tensors=torch.ones(batch_dict[f_name].size())
+                mask_name=f_name.split('_')[0]
+                batch_dict[mask_name]=mask_tensors.masked_fill_(batch_dict[f_name]==0,0)
+        
+        #concat other tensors(meta data,label)
+        for f_name in tensors[0]._fields[-2:]:
+            batch_dict[f_name]=torch.stack(batch_dict[f_name])
 
-        return {'job_token_tensors':job_tensors,'job_seg_tensors':jobSegment_tensors,'job_mask_tensors':jobMask_tensors,
-                'cp_token_tensors':cp_tensors,'cp_seg_tensors':cpSegment_tensors,'cp_mask_tensors':cpMask_tensors,
-                'item_tensors':item_tensors,'metaData_tensors':metaData_tensors,'label_tensors':label_tensors,}
     else:
-        return {'job_token_tensors':job_tensors,'cp_token_tensors':cp_tensors,'item_tensors':item_tensors,
-                'metaData_tensors':metaData_tensors,'label_tensors':label_tensors,}
+        #collect data
+        for example in tensors:
+            #convert to name-value pair
+            data_items=example._asdict().items()
+            for (f_name,data) in data_items:
+                batch_dict[f_name].append(torch.tensor(data))
+            
+        #pad tokens
+        for f_name in field_names[:4]:
+            batch_dict[f_name]=pad_sequence(batch_dict[f_name],batch_first=True)
+        
+        #concat other tensors(meta data,label)
+        for f_name in field_names[-2:]:
+            batch_dict[f_name]=torch.stack(batch_dict[f_name])
+    
+    return batch_dict
 
+def load_and_cacheEamxples(args,tokenizer,mode):
+    #build path variable
+    data_path=os.path.join(args.data_dir,args.task)
+    process_path=os.path.join(args.saved_dir,args.process_dir)
+    lda_model_path=os.path.join(process_path,args.lda_model_file)
+    lda_vocab_path=os.path.join(process_path,args.lda_vocab_file)
 
-def load_and _cacheEamxples(args,tokenizer,mode):
     #build file path
     file_path=os.path.join(args.data_dir,args.task,
-                           'cached_{}_{}_{}_{}.zip'.format(
-                               args.task,args.mode,
-                               args.max_textLen,
-                               list(filter(None,args.model_name_or_path.split('/'))).pop(-1)))
+                           'cached_{}_{}_{}.zip'.format(
+                            args.task,args.mode,
+                            list(filter(None,args.model_name_or_path.split('/'))).pop(-1)))
     
     if os.path.isfile(file_path):
         logger.info(f'Loading feature from {file_path}')
         datasets=torch.load(file_path)
     else:
+
         logger.info(f'Build {mode} dataset!')
         #read
         datasets=pd.read_csv(os.path.join(args.data_dir,args.task,mode,'data.csv'),encoding='utf-8')
-
+        datasets=datasets.itertuples()
         #text processing
         logger.info('Start data process!')
-        datasets=process_data(datasets,args)
+        datasets=list(process_data(datasets,args))
 
-        #extract feature
-        if args.model_type.endswith('bert'):
-            data_transformer=transform_feature('bert',args.lda_vocab_path,args.lda_model_path,args)
-        elif args.model_type.endswith('rnn'):
-            data_transformer=transform_feature('rnn',args.lda_vocab_path,args.lda_model_path,args)
-        
-        logger.info('Start to transform to datasets!')
-        datasets=data_transformer.convert_text(datasets,tokenizer,args.cp_sentNum,args.desc_sentNum,
-                                                args.require_sentNum,args.benefit_sentNum,args.max_textLen)
-
-        #save data to disk
+        # save data to disk
         torch.save(datasets,file_path)
         logger.info(f'Save data to {file_path} success!')
+    
+    #extract feature
+    logger.info('Convert example to tensor data!')
 
-    #convert to tensor datasets
-    datasets=FakeJobDataset(datasets)
-    logger.info('Convert to tensor dataset success!')
+    if args.model_type.endswith('bert'):
+        datasets=BertDataset(datasets,tokenizer,lda_vocab_path,
+                            lda_model_path,args)
+
+    elif args.model_type.endswith('rnn'):
+        print('Using rnn datasets')
+        datasets=RnnDataset(datasets,tokenizer,lda_vocab_path,
+                            lda_model_path,args)
 
     return datasets
-
-
-        
 
 
 
