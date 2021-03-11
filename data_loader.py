@@ -1,0 +1,324 @@
+import pandas as pd
+import numpy as np
+import logging
+import spacy
+import torch
+import copy
+import json
+import os
+
+from gensim.models.ldamulticore import LdaMulticore
+from gensim.corpora.dictionary import Dictionary
+from gensim.matutils import corpus2dense
+from process.text_process import sent_process,text_clean,count_links,remove_stopwords,doc_process
+from utils import load_edu_dict,load_job_dict,load_special_tokens,load_text_vocab,load_item_vocab,set_log_config
+from torch.utils.data import DataLoader,Dataset
+from torch.nn.utils.rnn import pad_sequence
+from collections import namedtuple,defaultdict
+import torch
+
+#import module for testing data_loader
+import argparse
+from transformers import BertTokenizer
+
+#create logger
+logger=logging.getLogger(__name__)
+
+#define features field
+InputFeature=namedtuple('InputFeature',['cp_file','desc','require','benefits',
+                                        'title','meta_data','label'])
+BertFeature=namedtuple('BertFeature',['job_tokens','cp_tokens','job_segs','cp_segs',
+                                        'title','meta_data','label'])
+
+class BertDataset(Dataset):
+    def __init__(self,examples,model_name,lda_vocab_path,lda_model_path,args):
+        self.data=examples
+        self.tokenizer=BertTokenizer.from_pretrained(model_name)
+        #add new special token
+        spec_tokens=load_special_tokens(args)
+        self.tokenizer.additional_special_tokens=spec_tokens
+        self.tokenizer.add_tokens(spec_tokens)
+        self.args=args
+        self.item_vocab=load_item_vocab(args)
+        self.lda_vocab=Dictionary.load(lda_vocab_path)
+        self.lda_model=LdaMulticore.load(lda_model_path)
+
+        self.sent_lim=[self.args.cp_sentNum,self.args.desc_sentNum,
+                        self.args.require_sentNum,self.args.benefit_sentNum]
+        self.text_fields=self.data[0]._fields[:4]
+    def __getitem__(self,key):
+        #fetch data
+        example=self.data[key]
+
+        #extract each data
+        wordN=[]
+        topics=[]
+        allToken_ids=[]
+        allSegment_ids=[]
+
+        for idx,(doc,max_sent) in enumerate(zip(example[:4],self.sent_lim)):
+
+            #count total word num for [cp_file,require]
+            if idx%2!=0:
+                word_num=len([w for sent in doc for w in sent])
+                wordN.append(word_num)
+            
+            #tokenize subword
+            subwords=[]
+            if doc:
+                for sent in doc[:max_sent]:
+                    for w in sent:
+                        subword=self.tokenizer.tokenize(w)
+                        if not subword:
+                            subword=[self.tokenizer.unk_token]
+                        subwords.extend(subword)
+            
+            #truncated subwords equal to max textLen
+            max_textLen=self.args.max_textLen-1
+            if len(subwords)>max_textLen:
+                subwords=subwords[:max_textLen]
+            
+            #add sep token & convert
+            subwords+=[self.tokenizer.sep_token]
+            token_ids=self.tokenizer.convert_tokens_to_ids(subwords)
+            segment_ids=[0 if idx<2 else 1]*len(token_ids)
+
+            allToken_ids.append(token_ids)
+            allSegment_ids.append(segment_ids)
+        
+        #combined data
+        job_tokens=[self.tokenizer.cls_token_id]+allToken_ids[1]+allToken_ids[2]
+        cp_tokens=[self.tokenizer.cls_token_id]+allToken_ids[0]+allToken_ids[3]
+        job_segs=[0]+allSegment_ids[1]+allSegment_ids[2]
+        cp_segs=[0]+allSegment_ids[0]+allSegment_ids[3]
+
+        #extract topics
+        desc_bow=[w for sent in example[1] for w in sent]
+        if desc_bow:
+            desc_bow=self.lda_vocab.doc2bow(desc_bow)
+            desc_topics=self.lda_model.get_document_topics(desc_bow)
+            desc_topics=corpus2dense([desc_topics],num_terms=self.lda_model.num_topics,num_docs=1).T.tolist()[0]
+        else:
+            desc_topics=[0.0]*self.lda_model.num_topics
+
+        #convert title text to index
+        item=[self.item_vocab.index(w) if w in self.item_vocab else self.item_vocab.index('[UNK]') for w in example.title]
+
+        #fetch other data=[title,meta_data,labels]
+        meta_data=example.meta_data+wordN+desc_topics
+        return BertFeature(job_tokens=job_tokens,cp_tokens=cp_tokens,job_segs=job_segs,
+                           cp_segs=cp_segs,title=item,meta_data=meta_data,label=example.label)
+
+    def __len__(self):
+        return len(self.data)
+
+class RnnDataset(Dataset):
+    def __init__(self,examples,vocab,lda_vocab_path,lda_model_path,args):
+        self.data=examples
+        self.vocab=vocab
+        self.args=args
+        self.item_vocab=load_item_vocab(args)
+        self.lda_vocab=Dictionary.load(lda_vocab_path)
+        self.lda_model=LdaMulticore.load(lda_model_path)
+        self.sent_lim=[self.args.cp_sentNum,self.args.desc_sentNum,
+                        self.args.require_sentNum,self.args.benefit_sentNum]
+    def __getitem__(self,key):
+        #fetch data
+        example=self.data[key]
+
+        #extract each data
+        wordN=[]
+        allToken_ids=[]
+
+        for idx,(doc,max_sent) in enumerate(zip(example[:4],self.sent_lim)):
+
+            #count total word num for [cp_file,require]
+            if idx%2!=0:
+                word_num=len([w for sent in doc for w in sent])
+                wordN.append(word_num)
+            
+            #tokenize subword
+            token_ids=[]
+            if doc:
+                for sent in doc[:max_sent]:
+                    for w in doc:
+                        if w in self.vocab:
+                            word_index=self.vocab.index(w)
+                        else:
+                            word_index=self.vocab.index('[UNK]')
+                        token_ids.append(word_index)
+
+                    #add sent bound
+                    token_ids.append(self.vocab.index('[SEP]'))
+
+            if len(token_ids)>self.args.max_textLen:
+                token_ids=token_ids[:self.args.max_textLen]
+
+            allToken_ids.append(token_ids)
+
+        #extract topics
+        desc_bow=[w for sent in example[1] for w in sent]
+        if desc_bow:
+            desc_bow=self.lda_vocab.doc2bow(desc_bow)
+            desc_topics=self.lda_model.get_document_topics(desc_bow)
+            desc_topics=corpus2dense([desc_topics],num_terms=self.lda_model.num_topics,num_docs=1).T.tolist()[0]
+        else:
+            desc_topics=[0.0]*self.lda_model.num_topics
+
+        #convert title to index
+        item=[self.item_vocab.index(w) if w in self.item_vocab else self.item_vocab.index('[UNK]') for w in example.title]
+        
+        #fetch other data=[meta_data,labels]
+        other_data=list(example[5:])
+        other_data[0]+=(wordN+desc_topics)#add feature[wordN,topics] to metadata
+        if len(other_data[0])==17:
+            print('Other_data',key)
+        #combine data
+        features=allToken_ids+[item]+other_data
+
+        #data memeber=(token_ids for 4 text fields,segment_ids for 4 text fields,
+        #               title,metadata,label)
+        return InputFeature._make(features)
+
+    def __len__(self):
+        return len(self.data)
+
+class process_data:
+    def __init__(self,data,args):
+        self.data=data
+        self.job_level=load_job_dict(args)
+        self.edu_level=load_edu_dict(args)
+        #load nlp piepline model
+        spacy.require_gpu()
+        self.nlp_pipe=spacy.load(args.nlp_model)
+        self.args=args
+    def __iter__(self):
+        for idx,data in enumerate(self.data):
+            if idx%1000==0:
+                logger.info(f'Already clean & convert {idx} examples!')
+            example=self.extract_data(data)
+            
+            #display extract data info
+            if idx<5:
+                logger.info(f"****{idx+1} th's example information")
+                logger.info(example)
+
+            yield example
+
+    def extract_data(self,data):
+        #clean text 
+        cp_profile=text_clean(data.company_profile) if not pd.isna(data.company_profile) else ''
+        desc=text_clean(data.description) if not pd.isna(data.description) else ''
+        requires=text_clean(data.requirements) if not pd.isna(data.requirements) else ''
+        benefits=text_clean(data.benefits) if not pd.isna(data.benefits) else ''
+        title=text_clean(data.title)
+
+        #create meta feature
+        has_descLink=1 if count_links(desc)!=0 else 0
+        require_edu=self.edu_level[data.required_education] if data.required_education in self.edu_level else 0
+        require_job=self.job_level[data.required_experience] if data.required_experience in self.job_level else 0
+        lower_edu=1 if 0<require_edu<self.args.edu_threshold else 0
+        lower_job=1 if 0<require_job<self.args.job_threshold else 0
+        meta_data=[has_descLink,require_edu,require_job,lower_edu,lower_job]
+        meta_data+=[data.has_company_logo,data.telecommuting]
+
+        #tokenized text
+        cp_profile=doc_process(self.nlp_pipe(cp_profile)) if cp_profile else []
+        desc=doc_process(self.nlp_pipe(desc)) if desc else []
+        requires=doc_process(self.nlp_pipe(requires)) if requires else []
+        benefits=doc_process(self.nlp_pipe(benefits)) if benefits else []
+        title=[w for sent in doc_process(self.nlp_pipe(title)) for w in sent]
+        
+        return InputFeature(cp_file=cp_profile,desc=desc,require=requires,benefits=benefits,title=title,
+                            meta_data=meta_data,label=data.fraudulent)
+
+def create_min_batch(tensors):
+    batch_dict=defaultdict(list)
+    field_names=tensors[0]._fields
+    #get  tensor
+    if hasattr(tensors[0],'job_segs'):
+        #collect data
+        for example in tensors:
+            #convert to name-value pair
+            data_items=example._asdict().items()
+            for (f_name,data) in data_items:
+                batch_dict[f_name].append(torch.tensor(data))
+        
+        #pad sequence for text tensors
+        for idx,f_name in enumerate(list(batch_dict.keys())[:4]):
+            batch_dict[f_name]=pad_sequence(batch_dict[f_name],batch_first=True)
+            #create mask tensors
+            if idx<2:
+                mask_tensors=torch.ones(batch_dict[f_name].size())
+                mask_name=f_name.split('_')[0]
+                batch_dict[mask_name]=mask_tensors.masked_fill_(batch_dict[f_name]==0,0)
+        
+        #concat other tensors(meta data,label)
+        for f_name in tensors[0]._fields[-2:]:
+            batch_dict[f_name]=torch.stack(batch_dict[f_name])
+
+    else:
+        #collect data
+        for example in tensors:
+            #convert to name-value pair
+            data_items=example._asdict().items()
+            for (f_name,data) in data_items:
+                batch_dict[f_name].append(torch.tensor(data))
+            
+        #pad tokens
+        for f_name in field_names[:4]:
+            batch_dict[f_name]=pad_sequence(batch_dict[f_name],batch_first=True)
+        
+        #concat other tensors(meta data,label)
+        for f_name in field_names[-2:]:
+            batch_dict[f_name]=torch.stack(batch_dict[f_name])
+    
+    return batch_dict
+
+def load_and_cacheEamxples(args,tokenizer,mode):
+    #build path variable
+    data_path=os.path.join(args.data_dir,args.task)
+    process_path=os.path.join(args.saved_dir,args.process_dir)
+    lda_model_path=os.path.join(process_path,args.lda_model_file)
+    lda_vocab_path=os.path.join(process_path,args.lda_vocab_file)
+
+    #build file path
+    file_path=os.path.join(args.data_dir,args.task,
+                           'cached_{}_{}_{}.zip'.format(
+                            args.task,args.mode,
+                            list(filter(None,args.model_name_or_path.split('/'))).pop(-1)))
+    
+    if os.path.isfile(file_path):
+        logger.info(f'Loading feature from {file_path}')
+        datasets=torch.load(file_path)
+    else:
+
+        logger.info(f'Build {mode} dataset!')
+        #read
+        datasets=pd.read_csv(os.path.join(args.data_dir,args.task,mode,'data.csv'),encoding='utf-8')
+        datasets=datasets.itertuples()
+        #text processing
+        logger.info('Start data process!')
+        datasets=list(process_data(datasets,args))
+
+        # save data to disk
+        torch.save(datasets,file_path)
+        logger.info(f'Save data to {file_path} success!')
+    
+    #extract feature
+    logger.info('Convert example to tensor data!')
+
+    if args.model_type.endswith('bert'):
+        datasets=BertDataset(datasets,tokenizer,lda_vocab_path,
+                            lda_model_path,args)
+
+    elif args.model_type.endswith('rnn'):
+        print('Using rnn datasets')
+        datasets=RnnDataset(datasets,tokenizer,lda_vocab_path,
+                            lda_model_path,args)
+
+    return datasets
+
+
+
+
