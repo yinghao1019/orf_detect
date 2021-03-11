@@ -40,10 +40,10 @@ note_p=re.compile(r'\(.+?\)')
 emphasize_p = re.compile(r'<(em|strong|b)>')
 captial_p=re.compile(r"([a-z])([A-Z])")
 money_p = re.compile(r'\$\d+')
-detect_link=re.compile('LINK')
+detect_link=re.compile('[LINK]')
 #define rule based func
 def replace_link(text):
-    return link_p.sub('LINK', str(text))
+    return link_p.sub('[LINK]', str(text))
 
 def remove_emoji(text):
     return emoji_p.sub(' ', str(text)).replace(':)', ' ')
@@ -85,9 +85,7 @@ def text_clean(text):
     text = remove_htmlTag(remove_note(text))
     text = add_captial_space(remove_punctuation(replace_escChar(text)))
     text = remove_nonASC(text)
-    #add white space to string punc
-    transTable=text.maketrans({"!":"! ",".":". ","?":"? ",";":"; ",",":', '})
-    return text.translate(transTable).strip()
+    return text.strip()
 
 
 '''Feature engineering func'''
@@ -125,20 +123,20 @@ def sent_process(sent):
   #find all entity for sent and replace origin text phrase 
   #reversed to not modify the offsets of other entities when substituting
   for ent in reversed(sent.ents):
-    orig_sent=orig_sent[:ent.start-sent_start]+[ent.label_]+orig_sent[ent.end-sent_start:]
+    orig_sent=orig_sent[:ent.start-sent_start]+[f'[{ent.label_}]']+orig_sent[ent.end-sent_start:]
   return orig_sent
 
 def remove_stopwords(sent):
   process_sent=[]
   for w in sent:
-    if (w not in en_stopwords) and (w not in string.punctuation) and (w.isalpha()):
+    if (w not in string.punctuation) and (w.isalpha()):
       process_sent.append(w)
   return process_sent
 def doc_process(doc):
   process_doc=[]
   for sent in doc.sents:
     sent=sent_process(sent)#lemmatize
-    process_doc.extend(remove_stopwords(sent))
+    process_doc.append(remove_stopwords(sent))
 
   return process_doc
 

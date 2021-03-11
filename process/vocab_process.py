@@ -144,7 +144,8 @@ def main(args):
 
         #data prepare
         context_data=combine_data(df,args.select_context_name).tolist()
-        context_corpus=corpus_process(context_data,en_nlp) 
+        context_corpus=corpus_process(context_data,en_nlp)
+        context_corpus=[[w for sent in doc for w in sent]for doc in context_corpus]
         # build lda model vocab
         context_dict=Dictionary(context_corpus)
         context_dict.filter_extremes(1,1,args.max_context_vocab)
