@@ -57,12 +57,11 @@ class Attentioner(nn.Module):
     def __init__(self):
         super(Attentioner,self).__init__()
         self.softmax=nn.Softmax(dim=2)
-    
+        
     def forward(self,key,query,value):
-        #key=[Bs,hid_dim]
-        #query=[Bs,hid_dim,seqLen]
+        #key=[Bs,embed_dim]
+        #query=[Bs,seqLen,hid_dim]
         #value=[Bs,seqLen,hid_dim]
-
         key=key.unsqueeze(1)
         #compute attention weight
         #attn_w=[Bs,1,seqLen]
