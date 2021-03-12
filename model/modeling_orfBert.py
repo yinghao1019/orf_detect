@@ -34,7 +34,7 @@ class BertFakeDetector(BertPreTrainedModel):
 
         #build other func
         self.tanh=nn.Tanh()
-
+        self.criterion=nn.BCEWithLogitsLoss()
         self.init_weights()
     
     def forward(self,job_tokens=None,cp_tokens=None,job_segs=None,
@@ -54,8 +54,8 @@ class BertFakeDetector(BertPreTrainedModel):
 
         #job_hidden=[Bs,seqLen,hid_dim]
         #cp_hidden=[Bs,seqLen,hid_dim]
-        job_hiddens=job_outputs[:1]
-        cp_hiddens=cp_outputs[:1]
+        job_hiddens=job_outputs[0]
+        cp_hiddens=cp_outputs[0]
 
         #context vector=[Bs,hid_dim]
         job_contexts,_=self.job_rnn(job_hiddens[:,1:,:])
@@ -63,7 +63,7 @@ class BertFakeDetector(BertPreTrainedModel):
         
         #concat context & transform
         #context_outputs=[Bs,hid_dim]
-        context_outputs=self.rnn_cat(torch.cat((job_contexts,cp_contexts),1))
+        context_outputs=self.rnn_cat(torch.cat((job_contexts[:,-1,:],cp_contexts[:,-1,:]),1))
 
         #extract items embed for title
         #item_embed=[Bs,embed_dim]
@@ -76,20 +76,12 @@ class BertFakeDetector(BertPreTrainedModel):
         hiddens=torch.cat((context_outputs,meta_hiddens),1)
         output_logitics=self.classifier(hiddens)
 
-        return output_logitics
+        loss=None
+        if label is not None:
+                loss=self.criterion(output_logitics.reshape(-1),label)
 
 
-if __name__=='__main__':
-    tokenizer=BertTokenizer.from_pretrained('bert-base-uncased')
-    config=BertConfig.from_pretrained('bert-base-uncased')
-    model=BertFakeDetector.from_pretrained('bert-base-uncased',config=config,hid_dim=256,output_dim=1,
-                                           embed_dim=300,meta_dim=12,fc_layers_num=3,vocab_num=2000)
-    model.train()
-    #add new tokens
-    print('Before add',len(tokenizer))
-    tokenizer.additional_special_tokens=['[ORG]','[Product]']
-    tokenizer.add_tokens(['[ORG]','[Product]'])
-    print('After add',len(tokenizer))
-    print(tokenizer.get_added_vocab())
-    
-    print(tokenizer.tokenize('[ORG]'))
+        return output_logitics,loss
+
+
+

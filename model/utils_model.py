@@ -1,6 +1,7 @@
 import torch
 from torch import nn
 from torch.nn import functional as F
+import numpy as np
 
 class fake_classifier(nn.Module):
     def __init__(self,concat_hid,inter_hid,output_hid,n_layers):
@@ -27,10 +28,12 @@ class fake_classifier(nn.Module):
         return self.output_layer(hiddens)
 
 class item_extractor(nn.Module):
-    def __init__(self,input_embed,embed_dim,padding_idx,pretrain_weight=None):
+    def __init__(self,input_embed,embed_dim,padding_idx,using_pretrain_weight=False):
         super(item_extractor,self).__init__()
-        if pretrain_weight:
-            self.embed_layer=nn.Embedding.from_pretrained(pretrain_weight,freeze=False,
+        if using_pretrain_weight:
+            item_embeds=np.load(r'.\Data\fakeJob\vocab_embed\fastText_300d_817_embed.npy')
+            item_embeds=torch.from_numpy(item_embeds)
+            self.embed_layer=nn.Embedding.from_pretrained(item_embeds,freeze=False,
                                                           padding_idx=padding_idx)
         else:
             self.embed_layer=nn.Embedding(input_embed,embed_dim,padding_idx=padding_idx)
