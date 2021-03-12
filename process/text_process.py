@@ -118,12 +118,12 @@ def count_links(text):
 def sent_process(sent):
   #fetch sent start position
   sent_start=sent.start
-  orig_sent=[t.lemma_.lower() if t.text!='LINK' else t.text for t in sent]
+  orig_sent=[t.lemma_.lower() for t in sent]
 
   #find all entity for sent and replace origin text phrase 
   #reversed to not modify the offsets of other entities when substituting
   for ent in reversed(sent.ents):
-    orig_sent=orig_sent[:ent.start-sent_start]+[f'[{ent.label_}]']+orig_sent[ent.end-sent_start:]
+    orig_sent=orig_sent[:ent.start-sent_start]+[f'[{ent.label_.lower()}]']+orig_sent[ent.end-sent_start:]
   return orig_sent
 
 def remove_stopwords(sent):
