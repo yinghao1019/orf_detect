@@ -91,7 +91,7 @@ def create_embeds(vocab,query,embed_path,args):
             
 
     #save vector to disk
-    save_dir=os.path.join(args.data_dir,args.task)
+    save_dir=os.path.join(args.data_dir,args.task,'vocab_embed')
     #detect vocab dir
     if not os.path.exists(os.path.join(save_dir)):
         os.makedirs(save_dir)
@@ -176,7 +176,7 @@ def main(args):
         item_corpus=corpus_process(item_data,en_nlp)
 
         #build title columns vocab
-        item_corpus=[w for doc in item_corpus for w in doc]
+        item_corpus=[w for doc in item_corpus for sent in doc for w in sent]
         item_vocab,item_token2id=build_vocab(item_corpus,special_tokens,args.max_item_size,
                                                args.min_item_freq,args.spec_first)
         
@@ -199,8 +199,8 @@ if __name__ == '__main__':
     parser.add_argument('--mode',type=str,default=None,required=True,choices=['train','test'],
                         help='Determined use train set or test set.')
 
-    parser.add_argument('--str_vocab_file',type=str,default='str_vocab.txt',help='The file name for save string vocab')
-    parser.add_argument('--context_vocab_file',type=str,default='context_vocab.txt',help='The file name for save context vocab.')
+    parser.add_argument('--str_vocab_file',type=str,default='item_vocab.txt',help='The file name for save item vocab')
+    parser.add_argument('--context_vocab_file',type=str,default='jobText_vocab.txt',help='The file name for save context vocab.')
     parser.add_argument('--lda_vocab_file',type=str,default=r'.\saved_model\process_model\topic_model\lda_vocab.pkl',
                         help='The file name for lda vocab')
     parser.add_argument('--pretrain_embed_file',type=str,default=r'fastText\wiki-news-300d-1M-subword.vec',
