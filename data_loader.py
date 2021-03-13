@@ -28,7 +28,7 @@ logger=logging.getLogger(__name__)
 InputFeature=namedtuple('InputFeature',['cp_file','desc','require','benefits',
                                         'title','meta_data','label'])
 BertFeature=namedtuple('BertFeature',['job_tokens','cp_tokens','job_segs','cp_segs',
-                                        'title','meta_data','label'])
+                                       'title','meta_data','label'])
 
 class BertDataset(Dataset):
     def __init__(self,examples,model_name,lda_vocab_path,lda_model_path,args):
@@ -251,7 +251,7 @@ def create_min_batch(tensors):
             if idx<2:
                 mask_tensors=torch.ones(batch_dict[f_name].size())
                 mask_name=f_name.split('_')[0]
-                batch_dict[mask_name]=mask_tensors.masked_fill_(batch_dict[f_name]==0,0)
+                batch_dict[mask_name+'_mask']=mask_tensors.masked_fill_(batch_dict[f_name]==0,0)
         
         #concat other tensors(meta data,label)
         for f_name in tensors[0]._fields[-2:]:
