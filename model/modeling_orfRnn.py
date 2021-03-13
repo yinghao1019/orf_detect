@@ -5,10 +5,6 @@ from utils_model import fake_classifier,item_extractor,Attentioner
 import numpy as np
 import os
 
-import sys
-sys.path.append(os.getcwd())# add path to module search path
-from utils import load_item_vocab,load_text_vocab
-import argparse
 class RnnExtractor(nn.Module):
     def __init__(self,input_embed,embed_dim,hid_dim,n_layers,
                 using_pretrain_weight=True,padding_idx=0,dropout_rate=0.1):
@@ -90,6 +86,7 @@ class RnnFakeDetector(nn.Module):
         job_context=self.text_concat(torch.cat((item_contexts,item_attned,job_context),1))
 
         #feed job_context with item,meta_data,cp_context to downstream model
+        #output logitics=[Bs,1]
         output_logitics=self.classifier(torch.cat((job_context,cp_context,meta_data),1))
 
         loss=None
