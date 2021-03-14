@@ -10,16 +10,13 @@ import os
 from gensim.models.ldamulticore import LdaMulticore
 from gensim.corpora.dictionary import Dictionary
 from gensim.matutils import corpus2dense
+from transformers import BertTokenizer
 from process.text_process import sent_process,text_clean,count_links,remove_stopwords,doc_process
 from utils import load_edu_dict,load_job_dict,load_special_tokens,load_text_vocab,load_item_vocab,set_log_config
 from torch.utils.data import DataLoader,Dataset
 from torch.nn.utils.rnn import pad_sequence
 from collections import namedtuple,defaultdict
 import torch
-
-#import module for testing data_loader
-import argparse
-from transformers import BertTokenizer
 
 #create logger
 logger=logging.getLogger(__name__)
@@ -285,7 +282,7 @@ def load_and_cacheEamxples(args,tokenizer,mode):
     #build file path
     file_path=os.path.join(args.data_dir,args.task,
                            'cached_{}_{}_{}.zip'.format(
-                            args.task,args.mode,
+                            args.task,mode,
                             list(filter(None,args.model_name_or_path.split('/'))).pop(-1)))
     
     if os.path.isfile(file_path):
