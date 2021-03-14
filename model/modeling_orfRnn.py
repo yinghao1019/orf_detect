@@ -1,10 +1,14 @@
 import torch
 from torch import nn
 from torch.nn import functional as F
-from utils_model import fake_classifier,item_extractor,Attentioner
+from .utils_model import fake_classifier,item_extractor,Attentioner
 import numpy as np
 import os
 
+model_config={"embed_dim":300,'hid_dim':256,"fc_dim":384,"meta_dim":12,
+              "output_dim":1,"rnn_layerN":2,"fc_layerN":3,
+              "dropout_rate":0.2,"bidirectional":False,"using_pretrain_weight":False,
+             }
 class RnnExtractor(nn.Module):
     def __init__(self,input_embed,embed_dim,hid_dim,n_layers,
                 using_pretrain_weight=True,padding_idx=0,dropout_rate=0.1):

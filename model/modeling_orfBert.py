@@ -2,13 +2,13 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 from transformers import BertModel,BertPreTrainedModel,BertTokenizer,BertConfig
-from utils_model import fake_classifier,item_extractor
+from .utils_model import fake_classifier,item_extractor
 
 
 class BertFakeDetector(BertPreTrainedModel):
     def __init__(self,config,hid_dim,output_dim,embed_dim,
                       meta_dim,fc_layers_num,vocab_num,padding_idx=0,
-                      pretrain_weight=None,batch_first=True,
+                      using_pretrain_weight=True,batch_first=True,
                       dropout_rate=0.1):
 
         super(BertFakeDetector,self).__init__(config)
@@ -23,7 +23,7 @@ class BertFakeDetector(BertPreTrainedModel):
                            dropout=dropout_rate)
         #build embed
         self.item_embed=item_extractor(vocab_num,embed_dim,padding_idx=padding_idx,
-                                       pretrain_weight=pretrain_weight)
+                                       using_pretrain_weight=using_pretrain_weight)
 
         #build concat layer
         self.rnn_cat=nn.Linear(hid_dim*2,hid_dim)
