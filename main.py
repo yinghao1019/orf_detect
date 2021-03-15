@@ -1,6 +1,6 @@
 from data_loader import load_and_cacheEamxples
 from model_trainer import Train_pipe
-from utils import load_item_vocab,load_text_vocab,load_special_tokens,MODEL_CLASSES,MODEL_PATH
+from utils import load_item_vocab,load_text_vocab,load_special_tokens,MODEL_CLASSES,MODEL_PATH,set_log_config,set_rndSeed
 
 import argparse
 import logging
@@ -20,8 +20,14 @@ def main(args):
 
         model_config=MODEL_CLASSES[args.used_model][0].from_pretrained(pretrained_name)
         tokenizer=MODEL_CLASSES[args.used_model][1].from_pretrained(pretrained_name)
-        model=MODEL_CLASSES[args.used_model][2].from_pretrained(pretrained_name)
 
+        uni_config=MODEL_CLASSES[args.used_model][3]
+        uni_config['vocab_num']=len(items_vocab)
+        uni_config['pos_weight']=args.pos_weights
+        model=MODEL_CLASSES[args.used_model][2].from_pretrained(pretrained_name,**uni_config)
+        
+
+        
         #add spec vocab to extend vocab num
         logger.info(f'Vocab num that before add new spec token:{len(tokenizer)}')
         tokenizer.additional_special_tokens=spec_vocab
@@ -32,21 +38,23 @@ def main(args):
 
         #resize model embed vocab num
         model.resize_token_embeddings(len(tokenizer))
-    elif args.used_model.startswith('gru'):
+    elif args.used_model.startswith('rnn'):
+        
         pretrained_name=MODEL_PATH[args.used_model]#get pretrain type
-        model_config==MODEL_CLASSES[args.used_model][0]
-        tokenizer=MODEL_CLASSES[args.used_model][1](args)
+        model_config=MODEL_CLASSES[pretrained_name][0]
+        tokenizer=MODEL_CLASSES[pretrained_name][1](args)
         #insert vocab nums
         model_config['text_vocab']=len(tokenizer)
         model_config['item_vocab']=len(items_vocab)
+        model_config['rnn_layerN']=2
+        model_config['pos_weight']=args.pos_weights
         #build model
-        model=MODEL_CLASSES[args.used_model][2](**model_config)
+        model=MODEL_CLASSES[pretrained_name][2](**model_config)
     
     logger.info('Start to loading data !')
     #loading data
     train_data=load_and_cacheEamxples(args,tokenizer,'train')
-    val_data=load_and_cacheEamxples(args,tokenizer,'val')
-
+    val_data=load_and_cacheEamxples(args,tokenizer,'test')
     #build pipeline
     pipe=Train_pipe(train_data,val_data,model,args)
 
@@ -67,7 +75,7 @@ if __name__=='__main__':
 
     parser.add_argument('--saved_dir',type=str,default='saved_model',help='')
     parser.add_argument('--process_dir',type=str,default='process_model',help='')
-    parser.add_argument('--lda_model_file',type=str,default=r'topic_model\lda_model',
+    parser.add_argument('--lda_model_file',type=str,default='topic_model\lda_model',
                         help='File path for pretrain lda model.')
     parser.add_argument('--lda_vocab_file',type=str,default='topic_model\lda_vocab.pkl',
                         help='File path for pretrain lda vocab.')
@@ -80,6 +88,7 @@ if __name__=='__main__':
 
     parser.add_argument('--edu_threshold',type=int,default=3,help='Lower edu threshold.')
     parser.add_argument('--job_threshold',type=int,default=3,help='Lower job threshold.')
+    parser.add_argument('--pos_weights',type=int,nargs='+',default=[4],help='a weight of positive examples.')
     parser.add_argument('--max_textLen',type=int,default=300,
                         help='Set max word num After tokenize text.')
     parser.add_argument('--cp_sentNum',type=int,default=7,
@@ -92,10 +101,10 @@ if __name__=='__main__':
                         help='Set max seq len After tokenize benefit.')
 
     
-    parser.add_argument('--lr',type=float,default=5e-4,help='Learning rate for Adam.')
-    parser.add_argument('--weight_decay',type=float,default=0.0,help='weight decay for Adam')
+    parser.add_argument('--lr',type=float,default=5e-5,help='Learning rate for Adam.')
+    parser.add_argument('--weight_decay',type=float,default=0.0,help='weight decay for Adam.')
     parser.add_argument('--max_norm',type=float,default=1.0,
-                        help='Max norm to avoid gradient exploding.Default is 1')
+                        help='Max norm to avoid gradient exploding.Default is 1.')
     parser.add_argument('--prob',type=float,default=0.5,
                        help='The probability threshold for predict pos class.')
 
@@ -117,11 +126,14 @@ if __name__=='__main__':
                         help='Select model for training.')
     parser.add_argument('--do_train',action='store_true',help='Whether to train model or not.')
     parser.add_argument('--do_eval',action='store_true',help='Whether to eval model or not.')
+    parser.add_argument('--random_seed',default=1234,help='set random seed.')
     args=parser.parse_args()
     args.model_name_or_path=MODEL_PATH[args.used_model]
 
+    #set logger config
+    set_log_config()
+    set_rndSeed(args)
     main(args)
-    
 
 
 
