@@ -28,13 +28,13 @@ BertFeature=namedtuple('BertFeature',['job_tokens','cp_tokens','job_segs','cp_se
                                        'title','meta_data','label'])
 
 class BertDataset(Dataset):
-    def __init__(self,examples,model_name,lda_vocab_path,lda_model_path,args):
+    def __init__(self,examples,tokenizer,lda_vocab_path,lda_model_path,args):
         self.data=examples
-        self.tokenizer=BertTokenizer.from_pretrained(model_name)
+        self.tokenizer=tokenizer
         #add new special token
-        spec_tokens=load_special_tokens(args)
-        self.tokenizer.additional_special_tokens=spec_tokens
-        self.tokenizer.add_tokens(spec_tokens)
+        self.spec_tokens=load_special_tokens(args)
+        self.tokenizer.additional_special_tokens=self.spec_tokens
+        self.tokenizer.add_tokens(self.spec_tokens)
         self.args=args
         self.item_vocab=load_item_vocab(args)
         self.lda_vocab=Dictionary.load(lda_vocab_path)
@@ -46,7 +46,7 @@ class BertDataset(Dataset):
     def __getitem__(self,key):
         #fetch data
         example=self.data[key]
-
+        
         #extract each data
         wordN=[]
         topics=[]
@@ -69,7 +69,8 @@ class BertDataset(Dataset):
                         if not subword:
                             subword=[self.tokenizer.unk_token]
                         subwords.extend(subword)
-            
+            else:
+                subwords=['[empty]']*self.args.max_textLen
             #truncated subwords equal to max textLen
             max_textLen=self.args.max_textLen-1
             if len(subwords)>max_textLen:
@@ -104,7 +105,7 @@ class BertDataset(Dataset):
         #fetch other data=[title,meta_data,labels]
         meta_data=example.meta_data+wordN+desc_topics
         return BertFeature(job_tokens=job_tokens,cp_tokens=cp_tokens,job_segs=job_segs,
-                           cp_segs=cp_segs,title=item,meta_data=meta_data,label=example.label)
+                           cp_segs=cp_segs,title=item,meta_data=meta_data,label=int(example.label))
 
     def __len__(self):
         return len(self.data)
@@ -270,7 +271,25 @@ def create_mini_batch(tensors):
             batch_dict[f_name]=torch.stack(batch_dict[f_name])
     
     return batch_dict
+#truncate dataset
+def balanced_process(dataset,class_weight,labels_name):
+    #get each class data
+    pos_dataset=dataset.query(f'{labels_name}==1')
+    neg_dataset=dataset.query(f'{labels_name}==0')
 
+    #get data num for each class
+    pos_num=len(pos_dataset)
+    neg_num=len(neg_dataset)
+    logger.info('Positive example nums:{}'.format(len(pos_dataset)))
+    logger.info('Negative example nums:{}'.format(len(neg_dataset)))
+    #random sampling data from neg datasets According to pos_num*class_weight
+    neg_dataset=neg_dataset.sample(n=pos_num*class_weight,axis=0)
+    logger.info('Negative example nums after balanced:{}'.format(len(neg_dataset)))
+
+    #combine  and shuffle data order
+    dataset=neg_dataset.append(pos_dataset,ignore_index=True).sample(frac=1).reset_index(drop=True)
+
+    return dataset
 def load_and_cacheEamxples(args,tokenizer,mode):
     #build path variable
     data_path=os.path.join(args.data_dir,args.task)
@@ -292,6 +311,16 @@ def load_and_cacheEamxples(args,tokenizer,mode):
         logger.info(f'Build {mode} dataset!')
         #read
         datasets=pd.read_csv(os.path.join(args.data_dir,args.task,mode,'data.csv'),encoding='utf-8')
+        #external process for train dataset
+        if mode=='train':
+            #remove duplicate example
+            logger.info(f'data nums Before remove duplicated:{len(datasets)}')
+            datasets=datasets.drop_duplicates(subset=['title','description'],ignore_index=True)
+            logger.info(f'data nums After remove duplicated:{len(datasets)}')
+
+            #balanced each class propotions for dataset
+            datasets=balanced_process(datasets,args.pos_weights[0],'fraudulent')
+
         datasets=datasets.itertuples()
         #text processing
         logger.info('Start data process!')
@@ -304,14 +333,18 @@ def load_and_cacheEamxples(args,tokenizer,mode):
     #extract feature
     logger.info('Convert example to tensor data!')
 
-    if args.used_model.endswith('bert'):
+    if args.used_model.startswith('bert'):
         datasets=BertDataset(datasets,tokenizer,lda_vocab_path,
                             lda_model_path,args)
 
-    elif args.used_model.endswith('rnn'):
-        print('Using rnn datasets')
+    elif args.used_model.startswith('rnn'):
+        logger.info('Using rnn datasets')
         datasets=RnnDataset(datasets,tokenizer,lda_vocab_path,
                             lda_model_path,args)
+
+    logger.info(f'****Display example state of {mode} dataset****')
+    for i in range(5):
+        logger.info(f'{i} example: {datasets[i]}')
 
     return datasets
 
