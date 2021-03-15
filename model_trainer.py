@@ -1,7 +1,7 @@
 from torch.utils.data import DataLoader,SequentialSampler,RandomSampler
 from torch.optim import Adam
 from utils import get_metrics
-from data_loader import create_min_batch
+from data_loader import create_mini_batch
 from transformers import get_linear_schedule_with_warmup,PreTrainedModel
 
 import numpy as np
@@ -28,10 +28,10 @@ class Train_pipe:
         #build data loader
         sampler=SequentialSampler(self.train_data)
         data_iter=DataLoader(self.train_data,batch_size=self.args.train_bs,
-                             sampler=sampler,num_workers=4,collate_fn=create_min_batch,pin_memory=True)
+                             sampler=sampler,num_workers=2,collate_fn=create_mini_batch,pin_memory=True)
         
         if self.args.epochs>0:
-            total_steps=self.args.epochs*(len(data_iter)//self.args.grad_accmu_steps)
+            total_steps=self.args.epochs*(len(data_iter)//self.args.grad_accumulate_steps)
             num_epochs=self.args.epochs
         elif self.args.total_steps>0:
             num_epochs=self.args.total_steps//(len(data_iter)//self.args.grad_accumulate_steps)
@@ -49,7 +49,7 @@ class Train_pipe:
         #train!
         logger.info('****Start to Training!****')
         logger.info(f'Train example nums:{len(self.train_data)}')
-        logger.info(f'Batch size:{self.args.bs}')
+        logger.info(f'Batch size:{self.args.train_bs}')
         logger.info(f'Epochs:{num_epochs}')
         logger.info(f'trainable step:{total_steps}')
         logger.info(f'lr warm steps:{self.args.warm_steps}')
@@ -99,7 +99,7 @@ class Train_pipe:
                     global_labels=torch.cat((global_predicts,inputs['label']),0)
                 
                 #evaluate model
-                if (global_steps%self.args.logging_step==0) and (self.args.logging_step>0):
+                if (global_steps%self.args.logging_steps==0) and (self.args.logging_steps>0):
                     #get predict label
                     predicts=torch.where(global_predicts>self.args.prob,1,0).cpu().numpy()
                     labels=global_labels.cpu().numpy()
@@ -109,7 +109,7 @@ class Train_pipe:
                     global_labels=None
                     global_predicts=None
                     #logging train info
-                    logger.info(f'****Model train merics for each {self.args.logging_step}****')
+                    logger.info(f'****Model train merics for each {self.args.logging_steps}****')
                     logger.info(f'Model global loss:{global_loss/global_steps}')
                     for n,s in train_metrics.items():
                         logger.info(f'{n} : {s}')
@@ -118,7 +118,7 @@ class Train_pipe:
                     self.eval_model(self.val_data)
                 
                 #save model state for each step ranges
-                if (global_steps%self.args.save_step==0) and (self.args.save_step>0):
+                if (global_steps%self.args.save_steps==0) and (self.args.save_steps>0):
                     self.save_model(self.model,save_model_dir)
                 
                 if 0<total_steps<global_steps:
@@ -130,8 +130,8 @@ class Train_pipe:
     def eval_model(self,eval_data):
         #build eval data loader
         sampler=RandomSampler(eval_data)
-        data_iter=DataLoader(eval_data,batch_size=self.args.bs,sampler=sampler,
-                             num_workers=4,collate_fn=create_min_batch,pin_memory=True)
+        data_iter=DataLoader(eval_data,batch_size=self.args.val_bs,sampler=sampler,
+                             num_workers=4,collate_fn=create_mini_batch,pin_memory=True)
         preds=None
         labels=None
         total_loss=0

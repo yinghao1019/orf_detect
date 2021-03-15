@@ -218,7 +218,6 @@ class process_data:
         lower_job=1 if 0<require_job<self.args.job_threshold else 0
         meta_data=[has_descLink,require_edu,require_job,lower_edu,lower_job]
         meta_data+=[data.has_company_logo,data.telecommuting]
-
         #tokenized text
         cp_profile=doc_process(self.nlp_pipe(cp_profile)) if cp_profile else []
         desc=doc_process(self.nlp_pipe(desc)) if desc else []
@@ -227,9 +226,9 @@ class process_data:
         title=[w for sent in doc_process(self.nlp_pipe(title)) for w in sent]
         
         return InputFeature(cp_file=cp_profile,desc=desc,require=requires,benefits=benefits,title=title,
-                            meta_data=meta_data,label=data.fraudulent)
+                            meta_data=meta_data,label=int(data.fraudulent))
 
-def create_min_batch(tensors):
+def create_mini_batch(tensors):
     batch_dict=defaultdict(list)
     field_names=tensors[0]._fields
     #get  tensor
@@ -305,11 +304,11 @@ def load_and_cacheEamxples(args,tokenizer,mode):
     #extract feature
     logger.info('Convert example to tensor data!')
 
-    if args.model_type.endswith('bert'):
+    if args.used_model.endswith('bert'):
         datasets=BertDataset(datasets,tokenizer,lda_vocab_path,
                             lda_model_path,args)
 
-    elif args.model_type.endswith('rnn'):
+    elif args.used_model.endswith('rnn'):
         print('Using rnn datasets')
         datasets=RnnDataset(datasets,tokenizer,lda_vocab_path,
                             lda_model_path,args)
