@@ -5,10 +5,7 @@ from .utils_model import fake_classifier,item_extractor,Attentioner
 import numpy as np
 import os
 
-model_config={"embed_dim":300,'hid_dim':256,"fc_dim":384,"meta_dim":12,
-              "output_dim":1,"rnn_layerN":2,"fc_layerN":3,
-              "dropout_rate":0.2,"bidirectional":False,"using_pretrain_weight":False,
-             }
+
 class RnnExtractor(nn.Module):
     def __init__(self,input_embed,embed_dim,hid_dim,n_layers,
                 using_pretrain_weight=True,padding_idx=0,dropout_rate=0.1):
@@ -17,7 +14,7 @@ class RnnExtractor(nn.Module):
 
         #determined using pretrain weight
         if using_pretrain_weight:
-            text_embed=np.load(r'.\Data\fakeJob\vocab_embed\fastText_300d_25502_embed.npy')
+            text_embed=np.load(r'./Data/fakeJob/vocab_embed/fastText_300d_25502_embed.npy')
             text_embed=torch.from_numpy(text_embed)
             self.embed_layer=nn.Embedding.from_pretrained(text_embed,freeze=False,padding_idx=padding_idx)
         else:
@@ -33,7 +30,7 @@ class RnnExtractor(nn.Module):
 
 class RnnFakeDetector(nn.Module):
     def __init__(self,text_vocab,item_vocab,embed_dim,hid_dim,fc_dim,meta_dim,output_dim,rnn_layerN,
-                     fc_layerN,padding_idx=0,dropout_rate=0.1,bidirectional=False,using_pretrain_weight=True):
+                     fc_layerN,pos_weight,padding_idx=0,dropout_rate=0.1,bidirectional=False,using_pretrain_weight=True):
 
         super(RnnFakeDetector,self).__init__()
 
@@ -55,7 +52,7 @@ class RnnFakeDetector(nn.Module):
         self.tanh=nn.Tanh()
         self.relu=nn.ReLU()
 
-        self.criterion=nn.BCEWithLogitsLoss()
+        self.criterion=nn.BCEWithLogitsLoss(pos_weight=torch.tensor(pos_weight))
     
     def forward(self,cp_file=None,desc=None,require=None,benefits=None,
                 title=None,meta_data=None,labels=None):
