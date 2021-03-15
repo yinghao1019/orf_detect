@@ -3,7 +3,22 @@ from torch import nn
 from torch.nn import functional as F
 import numpy as np
 
+model_uniConfig={"embed_dim":300,'hid_dim':256,"fc_dim":384,"meta_dim":12,
+              "output_dim":1,"fc_layerN":1,
+              "dropout_rate":0.1,"using_pretrain_weight":True,
+             }
+
 class fake_classifier(nn.Module):
+    """The final sub model for output fake prob.
+
+    This model input is hidden state of other model extracted.
+    and then we  output 1d logitics vec using N dense layer and classifier.
+    If you want to get fake prob,you can use sigmoid function to produce prob.
+
+
+
+    """
+
     def __init__(self,concat_hid,inter_hid,output_hid,n_layers):
         super(fake_classifier,self).__init__()
         #build module dim attr
@@ -31,7 +46,7 @@ class item_extractor(nn.Module):
     def __init__(self,input_embed,embed_dim,padding_idx,using_pretrain_weight=False):
         super(item_extractor,self).__init__()
         if using_pretrain_weight:
-            item_embeds=np.load(r'.\Data\fakeJob\vocab_embed\fastText_300d_817_embed.npy')
+            item_embeds=np.load(r'./Data/fakeJob/vocab_embed/fastText_300d_817_embed.npy')
             item_embeds=torch.from_numpy(item_embeds)
             self.embed_layer=nn.Embedding.from_pretrained(item_embeds,freeze=False,
                                                           padding_idx=padding_idx)
