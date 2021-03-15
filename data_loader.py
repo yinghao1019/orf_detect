@@ -307,7 +307,6 @@ def load_and_cacheEamxples(args,tokenizer,mode):
         logger.info(f'Loading feature from {file_path}')
         datasets=torch.load(file_path)
     else:
-
         logger.info(f'Build {mode} dataset!')
         #read
         datasets=pd.read_csv(os.path.join(args.data_dir,args.task,mode,'data.csv'),encoding='utf-8')
