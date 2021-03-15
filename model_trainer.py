@@ -26,9 +26,9 @@ class Train_pipe:
         save_model_dir=os.path.join(self.args.saved_dir,self.args.train_model_dir)#save model dir
 
         #build data loader
-        sampler=SequentialSampler(self.train_data)
+        sampler=RandomSampler(self.train_data)
         data_iter=DataLoader(self.train_data,batch_size=self.args.train_bs,
-                             sampler=sampler,num_workers=2,collate_fn=create_mini_batch,pin_memory=True)
+                             sampler=sampler,collate_fn=create_mini_batch,pin_memory=True)
         
         if self.args.epochs>0:
             total_steps=self.args.epochs*(len(data_iter)//self.args.grad_accumulate_steps)
@@ -51,7 +51,9 @@ class Train_pipe:
         logger.info(f'Train example nums:{len(self.train_data)}')
         logger.info(f'Batch size:{self.args.train_bs}')
         logger.info(f'Epochs:{num_epochs}')
+        logger.info(f'Pos class weights: {self.args.pos_weights}')
         logger.info(f'trainable step:{total_steps}')
+        logger.info(f'Current lr:{self.args.lr}')
         logger.info(f'lr warm steps:{self.args.warm_steps}')
         logger.info(f'gradient accumulate steps:{self.args.grad_accumulate_steps}')
         logger.info(f'logging steps:{self.args.logging_steps}')
@@ -68,7 +70,7 @@ class Train_pipe:
                     inputs={}
                     for f_name,data in batch.items():
                         if f_name=='title':
-                            inputs[f_name]=[t.to(self.device) for t in data]
+                            inputs[f_name]=[t.long().to(self.device) for t in data]
                         else:
                             inputs[f_name]=data.to(self.device)
                     
@@ -81,11 +83,11 @@ class Train_pipe:
                 #update model weights
                 if global_steps%self.args.grad_accumulate_steps==0:
                     #clip grad norm
-                    torch.nn.utils.clip_grad_norm_(self.model.parameters,
+                    torch.nn.utils.clip_grad_norm_(self.model.parameters(),
                                                    self.args.max_norm)                             
                     self.optimizer.step()
                     lr_scheduler.step()
-                    self.optimizer.zero_grad()
+                    self.optimizer.zero_grad()#clear leaf variable grad
 
                 #get predict & labels
                 #outputs=[Bs,1]
@@ -96,7 +98,7 @@ class Train_pipe:
                 else:
                     outputs=torch.sigmoid(outputs.reshape(-1))
                     global_predicts=torch.cat((global_predicts,outputs),0)
-                    global_labels=torch.cat((global_predicts,inputs['label']),0)
+                    global_labels=torch.cat((global_labels,inputs['label']),0)
                 
                 #evaluate model
                 if (global_steps%self.args.logging_steps==0) and (self.args.logging_steps>0):
@@ -129,9 +131,9 @@ class Train_pipe:
                 break
     def eval_model(self,eval_data):
         #build eval data loader
-        sampler=RandomSampler(eval_data)
+        sampler=SequentialSampler(eval_data)
         data_iter=DataLoader(eval_data,batch_size=self.args.val_bs,sampler=sampler,
-                             num_workers=4,collate_fn=create_mini_batch,pin_memory=True)
+                            collate_fn=create_mini_batch,pin_memory=True)
         preds=None
         labels=None
         total_loss=0
@@ -142,7 +144,7 @@ class Train_pipe:
                     inputs={}
                     for f_name,data in batch.items():
                         if f_name=='title':
-                            inputs[f_name]=[t.to(self.device) for t in data]
+                            inputs[f_name]=[t.long().to(self.device) for t in data]
                         else:
                             inputs[f_name]=data.to(self.device)
                 
@@ -152,12 +154,12 @@ class Train_pipe:
                 total_loss+=loss.item()
 
                 #get predicts & labels
-                if preds:
-                    preds=torch.cat((preds,torch.sigmoid(outputs.reshape(-1))),1)
+                if preds is not None:
+                    preds=torch.cat((preds,torch.sigmoid(outputs.reshape(-1))),0)
                 else:
                     preds=torch.sigmoid(outputs.reshape(-1))
-                if labels:
-                    labels=torch.cat((labels,inputs['label']),1)
+                if labels is not None:
+                    labels=torch.cat((labels,inputs['label']),0)
                 else:
                     labels=inputs['label']
         
