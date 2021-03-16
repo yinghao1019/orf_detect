@@ -1,8 +1,16 @@
+from sklearn.metrics import confusion_matrix,recall_score,precision_score,f1_score,balanced_accuracy_score
+from model.modeling_orfBert import BertFakeDetector
+from model.modeling_orfRnn import RnnFakeDetector
+from model.utils_model import model_uniConfig
+from transformers import BertConfig,BertTokenizer
+
 import pickle
 import os
 import logging
 import json
-from sklearn.metrics import confusion_matrix,recall_score,precision_score,f1_score,balanced_accuracy_score
+import random
+import numpy as np
+import torch
 
 def load_special_tokens(args):
     return [w.strip() for w in open(os.path.join(args.data_dir,args.task,'special_tokens.txt'))]
@@ -44,3 +52,23 @@ def get_metrics(y_predict,y_true):
     balance_acc=balanced_accuracy_score(y_true,y_predict)
     metrics={'precision':precision,'TNR':TNR,'recall':recall,'f_score':f_metrics,'balance_acc':balance_acc}
     return metrics
+def set_rndSeed(args):
+    random.seed(args.random_seed)
+    np.random.seed(args.random_seed)
+    torch.random.manual_seed(args.random_seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(args.random_seed)
+    if torch.backends.cudnn.is_available():
+        torch.backends.cudnn.eterministic=True
+def count_parameters(m):
+  return sum([p.numel() for p in m.parameters() if p.requires_grad])
+
+
+MODEL_CLASSES={
+    'bert-dnn':(BertConfig,BertTokenizer,BertFakeDetector,model_uniConfig),
+    'gru-attn':(model_uniConfig,load_text_vocab,RnnFakeDetector),
+}
+MODEL_PATH={
+    'bert-dnn':'bert-base-uncased',
+    'rnn-dnn':'gru-attn'
+}
