@@ -1,8 +1,9 @@
 from torch.utils.data import DataLoader,SequentialSampler,RandomSampler
 from torch.optim import Adam
+from torch import autograd
 from utils import get_metrics
 from data_loader import create_mini_batch
-from transformers import get_linear_schedule_with_warmup,PreTrainedModel
+from transformers import get_linear_schedule_with_warmup,PreTrainedModel,AdamW
 
 import numpy as np
 import pandas as pd
@@ -21,7 +22,7 @@ class Train_pipe:
         self.model=model
         self.device=torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
         self.model.to(self.device)
-        self.optimizer=Adam(self.model.parameters(),args.lr,weight_decay=args.weight_decay)
+        self.optimizer=AdamW(self.model.parameters(),args.lr,weight_decay=args.weight_decay)
     def train_model(self):
         save_model_dir=os.path.join(self.args.saved_dir,self.args.train_model_dir)#save model dir
 
@@ -65,7 +66,6 @@ class Train_pipe:
             for batch in epochs_pgb:
                 self.model.train()
                 global_steps+=1
-
                 if next(self.model.parameters()).is_cuda:
                     inputs={}
                     for f_name,data in batch.items():
@@ -84,7 +84,7 @@ class Train_pipe:
                 if global_steps%self.args.grad_accumulate_steps==0:
                     #clip grad norm
                     torch.nn.utils.clip_grad_norm_(self.model.parameters(),
-                                                   self.args.max_norm)                             
+                                                   self.args.max_norm)                            
                     self.optimizer.step()
                     lr_scheduler.step()
                     self.optimizer.zero_grad()#clear leaf variable grad
@@ -107,18 +107,20 @@ class Train_pipe:
                     labels=global_labels.cpu().numpy()
                     #evalute model with train data
                     train_metrics=get_metrics(predicts,labels)
-                    #init metrics for each step ranges
-                    global_labels=None
-                    global_predicts=None
                     #logging train info
                     logger.info(f'****Model train merics for each {self.args.logging_steps}****')
-                    logger.info(f'Model global loss:{global_loss/global_steps}')
+                    logger.info(f'Model global loss:{global_loss/self.args.logging_steps}')
                     for n,s in train_metrics.items():
                         logger.info(f'{n} : {s}')
 
                     #evaluate model with val data
                     self.eval_model(self.val_data)
-                
+
+                    #clear metrics for each logging steps
+                    global_labels=None
+                    global_predicts=None
+                    global_loss=0
+                    
                 #save model state for each step ranges
                 if (global_steps%self.args.save_steps==0) and (self.args.save_steps>0):
                     self.save_model(self.model,save_model_dir)
@@ -129,6 +131,7 @@ class Train_pipe:
             if 0<total_steps<global_steps:
                 train_pgb.close()
                 break
+        self.save_model(self.model,save_model_dir)
     def eval_model(self,eval_data):
         #build eval data loader
         sampler=SequentialSampler(eval_data)
@@ -170,8 +173,8 @@ class Train_pipe:
         eval_metrics=get_metrics(preds,labels)
 
         logger.info('****Start to evaluate Model****')
-        logger.info('Data num:')
-        logger.info('Batch size:')
+        logger.info(f'Data num:{len(eval_data)}')
+        logger.info(f'Batch size:{self.args.val_bs}')
         logger.info(f'eval_loss : {total_loss/len(data_iter)}')
 
         for n,s in eval_metrics.items():
@@ -188,7 +191,7 @@ class Train_pipe:
         
         try:
             if isinstance(model,PreTrainedModel):
-                model.save_pretrained(save_model_path)
+                model.save_pretrained(save_model_dir)
             else:
                 model_state=model.state_dict()
                 torch.save(model_state,os.path.join(save_model_dir,'model_state.pt'))
