@@ -22,7 +22,7 @@ from utils import load_special_tokens,set_log_config,load_ftQuery
 
 
 logger = logging.getLogger(__name__)
-
+en_stopwords=nltk.corpus.stopwords.words('english')
 # define substitute regex pattern
 en_stopwords=stopwords.words('english')
 link_p = re.compile(r'(https?://\S+|www\.\S+)|(\(?#*(EMAIL|PHONE|URL)_\w+#*\)?)')
@@ -40,10 +40,10 @@ note_p=re.compile(r'\(.+?\)')
 emphasize_p = re.compile(r'<(em|strong|b)>')
 captial_p=re.compile(r"([a-z])([A-Z])")
 money_p = re.compile(r'\$\d+')
-detect_link=re.compile('[LINK]')
+alpha_p=re.compile(r'\[?[a-zA-Z_]+\]?')
 #define rule based func
 def replace_link(text):
-    return link_p.sub('[LINK]', str(text))
+    return link_p.sub('LINK ', str(text))
 
 def remove_emoji(text):
     return emoji_p.sub(' ', str(text)).replace(':)', ' ')
@@ -68,7 +68,7 @@ def replace_escChar(text):
     text = text.replace('&quot;', ': ').replace(
         '&amp;', 'and ').replace('&It;', '< ')
     text = text.replace('&gt;', '> ').replace(
-        '&nbsp;', ' ').replace('&beta;', ' ').replace('\xa0',' ')
+        '&nbsp;', ' ').replace('&beta;', ' ').replace(u'\xa0',u' ')
     return text
 def remove_note(text):
     return note_p.sub(' ',str(text))
@@ -112,13 +112,13 @@ def replace_locName(text):
 
 def count_links(text):
     '''Return LINK nums in text'''
-    return len(detect_link.findall(str(text)))
+    return len(link_p.findall(str(text)))
 
 '''Text process func'''
 def sent_process(sent):
   #fetch sent start position
   sent_start=sent.start
-  orig_sent=[t.lemma_.lower() for t in sent]
+  orig_sent=[t.lemma_ for t in sent]
 
   #find all entity for sent and replace origin text phrase 
   #reversed to not modify the offsets of other entities when substituting
@@ -129,8 +129,8 @@ def sent_process(sent):
 def remove_stopwords(sent):
   process_sent=[]
   for w in sent:
-    if (w not in string.punctuation) and (w.isalpha()):
-      process_sent.append(w)
+    if (w not in string.punctuation) and (alpha_p.fullmatch(w) is not None):
+        process_sent.append(w)
   return process_sent
 def doc_process(doc):
   process_doc=[]
@@ -146,8 +146,9 @@ def corpus_process(data,nlp_pipe):
     #filter empty string
     data=filter(lambda x:True if x else False,data)
     #using nlp_pipeline to handle text
-    data=list(map(lambda x:nlp_pipe(x) ,data))
+    data=list(map(lambda x:nlp_pipe(x.lower()) ,data))
     corpus=list(map(doc_process,data))
+    corpus=[[w for sent in doc for w in sent if w not in en_stopwords] for doc in corpus]
     logger.info('Top 3 data {}'.format(corpus[:3]))
 
     return corpus

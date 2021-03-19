@@ -113,7 +113,6 @@ class Train_pipe:
                     for n,s in train_metrics.items():
                         logger.info(f'{n} : {s}')
 
-                    #evaluate model with val data
                     self.eval_model(self.val_data)
 
                     #clear metrics for each logging steps
