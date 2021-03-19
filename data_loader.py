@@ -37,8 +37,8 @@ class BertDataset(Dataset):
         self.tokenizer.add_tokens(self.spec_tokens)
         self.args=args
         self.item_vocab=load_item_vocab(args)
-        self.lda_vocab=Dictionary.load(lda_vocab_path)
-        self.lda_model=LdaMulticore.load(lda_model_path)
+        # self.lda_vocab=Dictionary.load(lda_vocab_path)
+        # self.lda_model=LdaMulticore.load(lda_model_path)
 
         self.sent_lim=[self.args.cp_sentNum,self.args.desc_sentNum,
                         self.args.require_sentNum,self.args.benefit_sentNum]
@@ -90,20 +90,23 @@ class BertDataset(Dataset):
         job_segs=[0]+allSegment_ids[1]+allSegment_ids[2]
         cp_segs=[0]+allSegment_ids[0]+allSegment_ids[3]
 
-        #extract topics
-        desc_bow=[w for sent in example[1] for w in sent]
-        if desc_bow:
-            desc_bow=self.lda_vocab.doc2bow(desc_bow)
-            desc_topics=self.lda_model.get_document_topics(desc_bow)
-            desc_topics=corpus2dense([desc_topics],num_terms=self.lda_model.num_topics,num_docs=1).T.tolist()[0]
-        else:
-            desc_topics=[0.0]*self.lda_model.num_topics
+        # #extract topics
+        # desc_bow=[w for sent in example[1] for w in sent]
+        # if desc_bow:
+        #     desc_bow=self.lda_vocab.doc2bow(desc_bow)
+        #     desc_topics=self.lda_model.get_document_topics(desc_bow)
+        #     desc_topics=corpus2dense([desc_topics],num_terms=self.lda_model.num_topics,num_docs=1).T.tolist()[0]
+        # else:
+        #     desc_topics=[0.0]*self.lda_model.num_topics
 
-        #convert title text to index
-        item=[self.item_vocab.index(w) if w in self.item_vocab else self.item_vocab.index('[UNK]') for w in example.title]
+        #convert title to index
+        if example.title:
+            item=[self.item_vocab.index(w) if w in self.item_vocab else self.item_vocab.index('[UNK]') for w in example.title]
+        else:
+            item=[self.item_vocab.index('[PAD]')]
 
         #fetch other data=[title,meta_data,labels]
-        meta_data=example.meta_data+wordN+desc_topics
+        meta_data=example.meta_data+wordN
         return BertFeature(job_tokens=job_tokens,cp_tokens=cp_tokens,job_segs=job_segs,
                            cp_segs=cp_segs,title=item,meta_data=meta_data,label=int(example.label))
 
@@ -164,8 +167,10 @@ class RnnDataset(Dataset):
             desc_topics=[0.0]*self.lda_model.num_topics
 
         #convert title to index
-        item=[self.item_vocab.index(w) if w in self.item_vocab else self.item_vocab.index('[UNK]') for w in example.title]
-        
+        if example.title:
+            item=[self.item_vocab.index(w) if w in self.item_vocab else self.item_vocab.index('[UNK]') for w in example.title]
+        else:
+            item=[self.item_vocab.index('[PAD]')]
         #fetch other data=[meta_data,labels]
         other_data=list(example[5:])
         other_data[0]+=(wordN+desc_topics)#add feature[wordN,topics] to metadata
@@ -212,7 +217,7 @@ class process_data:
         title=text_clean(data.title)
 
         #create meta feature
-        has_descLink=1 if count_links(desc)!=0 else 0
+        has_descLink=count_links(data.description)!=0 if not pd.isna(data.description) else 0
         require_edu=self.edu_level[data.required_education] if data.required_education in self.edu_level else 0
         require_job=self.job_level[data.required_experience] if data.required_experience in self.job_level else 0
         lower_edu=1 if 0<require_edu<self.args.edu_threshold else 0
@@ -220,11 +225,11 @@ class process_data:
         meta_data=[has_descLink,require_edu,require_job,lower_edu,lower_job]
         meta_data+=[data.has_company_logo,data.telecommuting]
         #tokenized text
-        cp_profile=doc_process(self.nlp_pipe(cp_profile)) if cp_profile else []
-        desc=doc_process(self.nlp_pipe(desc)) if desc else []
-        requires=doc_process(self.nlp_pipe(requires)) if requires else []
-        benefits=doc_process(self.nlp_pipe(benefits)) if benefits else []
-        title=[w for sent in doc_process(self.nlp_pipe(title)) for w in sent]
+        cp_profile=doc_process(self.nlp_pipe(cp_profile.lower())) if cp_profile else []
+        desc=doc_process(self.nlp_pipe(desc.lower())) if desc else []
+        requires=doc_process(self.nlp_pipe(requires.lower())) if requires else []
+        benefits=doc_process(self.nlp_pipe(benefits.lower())) if benefits else []
+        title=[w for sent in doc_process(self.nlp_pipe(title.lower())) for w in sent]
         
         return InputFeature(cp_file=cp_profile,desc=desc,require=requires,benefits=benefits,title=title,
                             meta_data=meta_data,label=int(data.fraudulent))
