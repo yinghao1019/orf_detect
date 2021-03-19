@@ -1,6 +1,7 @@
 [PAD]
 [UNK]
 [SEP]
+[empty]
 [cardinal]
 [date]
 [event]
@@ -19,3 +20,4 @@
 [quantity]
 [time]
 [work_of_art]
+[link]
