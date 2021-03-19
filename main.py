@@ -65,6 +65,7 @@ def main(args):
     
     if args.do_eval:
         logger.info('Start to eval model !')
+        pipe.eval_model(train_data)
         pipe.eval_model(val_data)
 
 if __name__=='__main__':
@@ -88,7 +89,7 @@ if __name__=='__main__':
 
     parser.add_argument('--edu_threshold',type=int,default=3,help='Lower edu threshold.')
     parser.add_argument('--job_threshold',type=int,default=3,help='Lower job threshold.')
-    parser.add_argument('--pos_weights',type=float,nargs='+',default=[4.0],help='a weight of positive examples.')
+    parser.add_argument('--pos_weights',type=int,nargs='+',default=[4.0],help='a weight of positive examples.')
     parser.add_argument('--max_textLen',type=int,default=300,
                         help='Set max word num After tokenize text.')
     parser.add_argument('--cp_sentNum',type=int,default=7,
