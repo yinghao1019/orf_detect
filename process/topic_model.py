@@ -19,7 +19,7 @@ from utils import load_special_tokens,set_log_config,load_ftQuery
 logger = logging.getLogger(__name__)
 def choose_topic(bow_corpus,corpus,topics,vocab,chunksize, passes,eval_mode,workers):
     #build Model &train
-    lda_model=ldamulticore.LdaMulticore(bow_corpus,topics,id2word=vocab,workers=workers,
+    lda_model=ldamulticore.LdaMulticore(bow_corpus,topics,id2word=vocab,workers=2,
                                 chunksize=chunksize,passes=passes)
     #evaluate
     scores=[]
@@ -72,7 +72,7 @@ def main(args):
         topics_score=[]
 
         for  topic in topic_ranges:
-            _,scores=choose_topic(corpus_bow,corpus,topic,context_vocab,args.bs,args.epoch,args.eval_modes,args.num_workers)
+            _,scores=choose_topic(corpus_bow,corpus,topic,context_vocab,args.bs,args.epoch,args.eval_modes,2)
             topics_score.append(scores)
 
             #display model info
@@ -101,10 +101,10 @@ def main(args):
             logger.info('lda_model saved error!')
 
 if __name__=='__main__':
-    parser=argparse.ArgumentParser(usage='%(prog)s [-h] [--eval_mode [{u_mass,c_v,c_uci,c_npmi} ...]] [--do_select] \n \
+    parser=argparse.ArgumentParser(usage='%(prog)s [-h] [--eval_mode [{u_mass,c_v,c_uci,c_npmi}]] [--do_select] \n \
                                   [--do_train] [--min_topic MIN_TOPIC] \n \
                                   [--max_topic MAX_TOPIC] [--best_topic BEST_TOPIC] \n \
-                                  [--select_column [{company_profile,description,requirements,benefits}...]]')
+                                  [--select_column [{company_profile,description,requirements,benefits}]]')
 
     parser.add_argument('--data_dir',type=str,default=r'.\Data',help='Root dir for save data.')
     parser.add_argument('--task',type=str,default='fakeJob',help='The training Model task.')
@@ -119,7 +119,7 @@ if __name__=='__main__':
                         help='Select data column for building topic model.')
     
     
-    parser.add_argument('--num_workers',type=int,default=os.cpu_count(),
+    parser.add_argument('--num_workers',type=int,default=4,
                         help='Determined cpu core nums to training model.Default is os.cpu_count().')
     parser.add_argument('--epoch',type=int,default=10,help="Train times for training model.Default is 10.")
     parser.add_argument('--bs',type=int,default=128,help="Batch size for training model.Default is 128.")

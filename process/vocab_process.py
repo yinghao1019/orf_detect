@@ -142,7 +142,7 @@ def main(args):
 
         logger.info(f'Start to build context vocab for {args.select_context_name}!')
 
-        #data prepare
+        #text prepare
         context_data=combine_data(df,args.select_context_name).tolist()
         context_corpus=corpus_process(context_data,en_nlp)
         context_corpus=[[w for sent in doc for w in sent]for doc in context_corpus]
