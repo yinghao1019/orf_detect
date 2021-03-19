@@ -46,7 +46,7 @@ class item_extractor(nn.Module):
     def __init__(self,input_embed,embed_dim,padding_idx,using_pretrain_weight=False):
         super(item_extractor,self).__init__()
         if using_pretrain_weight:
-            item_embeds=np.load(r'./Data/fakeJob/vocab_embed/fastText_300d_819_embed.npy')
+            item_embeds=np.load(r'./Data/fakeJob/vocab_embed/fastText_300d_1061_embed.npy')
             item_embeds=torch.from_numpy(item_embeds)
             self.embed_layer=nn.Embedding.from_pretrained(item_embeds,freeze=False,
                                                           padding_idx=padding_idx)
