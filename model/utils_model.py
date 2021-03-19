@@ -3,8 +3,8 @@ from torch import nn
 from torch.nn import functional as F
 import numpy as np
 
-model_uniConfig={"embed_dim":300,'hid_dim':256,"fc_dim":384,"meta_dim":12,
-              "output_dim":1,"fc_layerN":1,
+model_uniConfig={"embed_dim":300,'hid_dim':512,"fc_dim":512,"meta_dim":12,
+              "output_dim":1,"fc_layerN":2,
               "dropout_rate":0.1,"using_pretrain_weight":True,
              }
 
@@ -34,12 +34,12 @@ class fake_classifier(nn.Module):
         self.output_layer=nn.Linear(inter_hid//pow(2,n_layers),output_hid)
 
         #build activation func
-        self.relu=nn.ReLU()
+        self.leakyRelu=nn.LeakyReLU()
     
     def forward(self,input_tensors):
-        hiddens=self.trans_layer(input_tensors)
+        hiddens=self.leakyRelu(self.trans_layer(input_tensors))
         for l in self.inter_layer:
-            hiddens=self.relu(l(hiddens))
+            hiddens=self.leakyRelu(l(hiddens))
         return self.output_layer(hiddens)
 
 class item_extractor(nn.Module):
