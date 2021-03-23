@@ -1,16 +1,11 @@
-import pandas as pd
-import numpy as np
 import nltk
-import spacy
 import os
 import logging
 import linecache
 import re
-import io
 import pickle
 import argparse
 import string
-from operator import itemgetter
 from collections import Counter
 from nltk.corpus import stopwords
 from gensim.corpora.dictionary import Dictionary

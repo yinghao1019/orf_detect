@@ -19,7 +19,7 @@ from utils import load_special_tokens,set_log_config,load_ftQuery
 logger = logging.getLogger(__name__)
 def choose_topic(bow_corpus,corpus,topics,vocab,chunksize, passes,eval_mode,workers):
     #build Model &train
-    lda_model=ldamulticore.LdaMulticore(bow_corpus,topics,id2word=vocab,workers=2,
+    lda_model=ldamulticore.LdaMulticore(bow_corpus,topics,id2word=vocab,workers=workers,
                                 chunksize=chunksize,passes=passes)
     #evaluate
     scores=[]
@@ -72,7 +72,7 @@ def main(args):
         topics_score=[]
 
         for  topic in topic_ranges:
-            _,scores=choose_topic(corpus_bow,corpus,topic,context_vocab,args.bs,args.epoch,args.eval_modes,2)
+            _,scores=choose_topic(corpus_bow,corpus,topic,context_vocab,args.bs,args.epoch,args.eval_modes,args.num_workers)
             topics_score.append(scores)
 
             #display model info
