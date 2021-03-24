@@ -5,14 +5,14 @@ import os
 import logging
 import linecache
 import argparse
+import string
 from collections import Counter
 from gensim.corpora.dictionary import Dictionary
 import sys
 sys.path.append(os.getcwd())# add path to module search path
 #customize module
 from utils import load_special_tokens,set_log_config,load_ftQuery
-from text_process import corpus_process,en_stopwords
-
+from text_process import corpus_process,en_stopwords,text_clean
 logger = logging.getLogger(__name__)
 
 '''Vocab process funcs'''
@@ -172,11 +172,12 @@ def main(args):
         logger.info(f'Start to build string vocab for {args.select_item_name}!')
 
         #data prepare
-        item_data=combine_data(df,args.select_item_name).tolist()
-        item_corpus=corpus_process(item_data,en_nlp)
+        item_data=df[args.select_item_name].values.tolist()
+        item_corpus=list(map(text_clean,item_data))#clean text
 
         #build title columns vocab
-        item_corpus=[w for doc in item_corpus for sent in doc for w in sent]
+        item_corpus=[w.lower() for doc in item_corpus for w in doc.split()
+                    if (w not in string.punctuation) and w.isalpha()]
         item_vocab,item_token2id=build_vocab(item_corpus,special_tokens,args.max_item_size,
                                                args.min_item_freq,args.spec_first)
         
