@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 import logging
 import spacy
+import string
 import torch
 import copy
 import json
@@ -37,8 +38,8 @@ class BertDataset(Dataset):
         self.tokenizer.add_tokens(self.spec_tokens)
         self.args=args
         self.item_vocab=load_item_vocab(args)
-        # self.lda_vocab=Dictionary.load(lda_vocab_path)
-        # self.lda_model=LdaMulticore.load(lda_model_path)
+        self.lda_vocab=Dictionary.load(lda_vocab_path)
+        self.lda_model=LdaMulticore.load(lda_model_path)
 
         self.sent_lim=[self.args.cp_sentNum,self.args.desc_sentNum,
                         self.args.require_sentNum,self.args.benefit_sentNum]
@@ -69,8 +70,6 @@ class BertDataset(Dataset):
                         if not subword:
                             subword=[self.tokenizer.unk_token]
                         subwords.extend(subword)
-            else:
-                subwords=['[empty]']*self.args.max_textLen
             #truncated subwords equal to max textLen
             max_textLen=self.args.max_textLen-1
             if len(subwords)>max_textLen:
@@ -90,14 +89,14 @@ class BertDataset(Dataset):
         job_segs=[0]+allSegment_ids[1]+allSegment_ids[2]
         cp_segs=[0]+allSegment_ids[0]+allSegment_ids[3]
 
-        # #extract topics
-        # desc_bow=[w for sent in example[1] for w in sent]
-        # if desc_bow:
-        #     desc_bow=self.lda_vocab.doc2bow(desc_bow)
-        #     desc_topics=self.lda_model.get_document_topics(desc_bow)
-        #     desc_topics=corpus2dense([desc_topics],num_terms=self.lda_model.num_topics,num_docs=1).T.tolist()[0]
-        # else:
-        #     desc_topics=[0.0]*self.lda_model.num_topics
+        #extract topics
+        desc_bow=[w for sent in example[1] for w in sent]
+        if desc_bow:
+            desc_bow=self.lda_vocab.doc2bow(desc_bow)
+            desc_topics=self.lda_model.get_document_topics(desc_bow)
+            desc_topics=corpus2dense([desc_topics],num_terms=self.lda_model.num_topics,num_docs=1).T.tolist()[0]
+        else:
+            desc_topics=[0.0]*self.lda_model.num_topics
 
         #convert title to index
         if example.title:
@@ -105,8 +104,8 @@ class BertDataset(Dataset):
         else:
             item=[self.item_vocab.index('[PAD]')]
 
-        #fetch other data=[title,meta_data,labels]
-        meta_data=example.meta_data+wordN
+        #combine other meta data=[orig,wordN,topic_distri]
+        meta_data=example.meta_data+wordN+desc_topics
         return BertFeature(job_tokens=job_tokens,cp_tokens=cp_tokens,job_segs=job_segs,
                            cp_segs=cp_segs,title=item,meta_data=meta_data,label=int(example.label))
 
@@ -229,7 +228,7 @@ class process_data:
         desc=doc_process(self.nlp_pipe(desc.lower())) if desc else []
         requires=doc_process(self.nlp_pipe(requires.lower())) if requires else []
         benefits=doc_process(self.nlp_pipe(benefits.lower())) if benefits else []
-        title=[w for sent in doc_process(self.nlp_pipe(title.lower())) for w in sent]
+        title=[w.lower() for w in title.split() if (w not in string.punctuation) and w.isalpha()]
         
         return InputFeature(cp_file=cp_profile,desc=desc,require=requires,benefits=benefits,title=title,
                             meta_data=meta_data,label=int(data.fraudulent))
@@ -253,7 +252,7 @@ def create_mini_batch(tensors):
             if idx<2:
                 mask_tensors=torch.ones(batch_dict[f_name].size())
                 mask_name=f_name.split('_')[0]
-                batch_dict[mask_name+'_mask']=mask_tensors.masked_fill_(batch_dict[f_name]==0,0)
+                batch_dict[mask_name+'_masks']=mask_tensors.masked_fill_(batch_dict[f_name]==0,0)
         
         #concat other tensors(meta data,label)
         for f_name in tensors[0]._fields[-2:]:
@@ -348,7 +347,7 @@ def load_and_cacheEamxples(args,tokenizer,mode):
 
     logger.info(f'****Display example state of {mode} dataset****')
     for i in range(5):
-        logger.info(f'{i} example: {datasets[i]}')
+        logger.info(f'{i} example: {datasets[int(i)]}')
 
     return datasets
 
