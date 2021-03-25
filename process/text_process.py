@@ -29,7 +29,7 @@ emoji_p = re.compile("[" u"\U0001F600-\U0001F64F"  # emotions
                      u"\U000024C2-\U0001F521"
                      "]+", flags=re.UNICODE)
 html_p = re.compile('<.*?>')
-asc_p = re.compile(r'[^\w\.\-;\?!,\+\$./\>\<\[\]]+', flags=re.ASCII)
+asc_p = re.compile(r'[^\w\.\-;\?!,\+\$/\>\<\[\]]+', flags=re.ASCII)
 punc_p = re.compile(r'([_\*\=-]+)|(\.{2,})')
 note_p=re.compile(r'\(.+?\)')
 emphasize_p = re.compile(r'<(em|strong|b)>')

@@ -124,10 +124,10 @@ class Train_pipe:
                 if (global_steps%self.args.save_steps==0) and (self.args.save_steps>0):
                     self.save_model(self.model,save_model_dir)
                 
-                if 0<total_steps<global_steps:
+                if 0<(total_steps*self.args.grad_accumulate_steps)<global_steps:
                     epochs_pgb.close()
                     break
-            if 0<total_steps<global_steps:
+            if 0<(total_steps*self.args.grad_accumulate_steps)<global_steps:
                 train_pgb.close()
                 break
         self.save_model(self.model,save_model_dir)
