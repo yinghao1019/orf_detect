@@ -5,7 +5,6 @@ from utils import load_item_vocab,load_text_vocab,load_special_tokens,MODEL_CLAS
 import argparse
 import logging
 import os
-
 logger=logging.getLogger(__name__)
 
 def main(args):
@@ -22,9 +21,10 @@ def main(args):
         tokenizer=MODEL_CLASSES[args.used_model][1].from_pretrained(pretrained_name)
 
         uni_config=MODEL_CLASSES[args.used_model][3]
-        uni_config['vocab_num']=len(items_vocab)
+        uni_config['item_input_dim']=len(items_vocab)
         uni_config['pos_weight']=args.pos_weights
-        model=MODEL_CLASSES[args.used_model][2].from_pretrained(pretrained_name,**uni_config)
+        uni_config['maxLen']=args.max_textLen
+        model=MODEL_CLASSES[args.used_model][2].from_pretrained(pretrained_name,config=model_config,**uni_config)
         
 
         
@@ -50,7 +50,7 @@ def main(args):
         model_config['pos_weight']=args.pos_weights
         #build model
         model=MODEL_CLASSES[pretrained_name][2](**model_config)
-    
+        
     logger.info('Start to loading data !')
     #loading data
     train_data=load_and_cacheEamxples(args,tokenizer,'train')
