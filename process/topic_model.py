@@ -3,7 +3,7 @@ import numpy as np
 import gensim 
 import spacy
 from gensim.corpora.dictionary import Dictionary
-from gensim.models import ldamulticore,coherencemodel
+from gensim.models import ldamulticore,coherencemodel,ldamodel
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 import seaborn as sns
@@ -19,7 +19,7 @@ from utils import load_special_tokens,set_log_config,load_ftQuery
 logger = logging.getLogger(__name__)
 def choose_topic(bow_corpus,corpus,topics,vocab,chunksize, passes,eval_mode,workers):
     #build Model &train
-    lda_model=ldamulticore.LdaMulticore(bow_corpus,topics,id2word=vocab,workers=workers,
+    lda_model=ldamodel.LdaModel(bow_corpus,topics,id2word=vocab,
                                 chunksize=chunksize,passes=passes)
     #evaluate
     scores=[]
