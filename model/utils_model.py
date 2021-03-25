@@ -3,8 +3,8 @@ from torch import nn
 from torch.nn import functional as F
 import numpy as np
 #Universal model params config
-model_uniConfig={"item_embed":300,'hid_dim':512,"fc_dim":512,"meta_dim":12,
-              "output_dim":1,"fcLayer_num":2,"dropout_rate":0.3,"using_pretrain_weight":False,
+model_uniConfig={"embed_dim":300,'hid_dim':512,"fc_dim":512,"meta_dim":12,
+              "output_dim":1,"dropout_rate":0.3,"using_pretrain_weight":False,
               }
 
 class fake_classifier(nn.Module):

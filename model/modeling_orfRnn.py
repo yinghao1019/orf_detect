@@ -7,12 +7,58 @@ import os
 
 
 class RnnExtractor(nn.Module):
+    """
+    A class to build rnn_layer with embedding for fakeJobdetection.
+    The class is inheriented from torch Module.
+
+    ...
+
+    Attributes
+    ----------
+    input_embed : int
+        Set the vocab nums that you want to convert to embed vector.
+    embed_dim : int
+        Set the dim for embed_vector.
+    hid_dim : int
+        Set the rnn neuron nums.
+    n_layers : int
+        Set the rnn_layer nums.
+
+    Methods
+    -------
+    forward(input_tensors):
+       compute input_token to extract useful knowledge.
+    """
     def __init__(self,input_embed,embed_dim,hid_dim,n_layers,
                 using_pretrain_weight=True,padding_idx=0,dropout_rate=0.1):
+        """
+        Set the model params to construct architecture for the text rnn extractor.
 
+        Parameters
+        ----------
+            input_embed : int
+                Set the dim for input_layer.Which dim equal to vocab num
+            embed_dim : int
+                Set the dim for embed_vector.
+            hid_dim : int
+                Set the dim for rnn model.
+            n_layers : int
+                Set layer num to use stack rnn.
+            using_pretrain_weight : int ,optional
+                Whether or not to use pretrain weight for embed_layer.
+            padding_idx : int ,optional
+                Set indice for pad token to build zero embed vector.
+            dropout_rate : float ,optional
+                Set the regularzation to rnn model.
+        """
         super(RnnExtractor,self).__init__()
+        #set model attr
+        self.input_embed=input_embed
+        self.embed_dim=embed_dim
+        self.hid_dim=hid_dim
+        self.n_layers=n_layers
 
-        #determined using pretrain weight
+        #determined using pretrain weight or not for job texts
         if using_pretrain_weight:
             text_embed=np.load(r'./Data/fakeJob/vocab_embed/fastText_300d_25502_embed.npy')
             text_embed=torch.from_numpy(text_embed)
@@ -23,39 +69,138 @@ class RnnExtractor(nn.Module):
         self.rnn_layer=nn.GRU(embed_dim,hid_dim,num_layers=n_layers,batch_first=True,dropout=dropout_rate)
 
     def forward(self,input_tensors):
+        """
+        Extract input_tensors hidden state using build model.
+        which hidden state will be vector of sequence.
+        Parameters
+        ----------
+        input_tensors : torch.LongTensor 
+            The input tensor is extracted hidden state(shape=[Bs,seqLen,hid_dim]).
 
-        hiddens=self.embed_layer(input_tensors).double()
+        Returns
+        -------
+        output_hiddens : torch.FloatTensor
+
+        """
+        hiddens=self.embed_layer(input_tensors)
         outputs,_=self.rnn_layer(hiddens.float())
         return outputs
 
 class RnnFakeDetector(nn.Module):
-    def __init__(self,text_vocab,item_vocab,embed_dim,hid_dim,fc_dim,meta_dim,output_dim,rnn_layerN,
-                     fc_layerN,pos_weight,padding_idx=0,dropout_rate=0.1,bidirectional=False,using_pretrain_weight=True):
+    """
+    A class to build GRU-DNN  model for fakeJobdetection.
+    The class is inheriented from torch Module.
 
+    ...
+
+    Attributes
+    ----------
+    text_input_dim : int
+        Set the text vocab nums that you want to convert to embed vector.
+    item_input_dim : int
+        Set the item vocab nums that you want to convert to embed vector.
+    embed_dim : int
+        The embed_dim for item & job text.
+    hid_dim : int
+        The hid_dim for rnn,concat layer
+    fc_dim : int
+        The fc_dim for fake model's hid_layer.
+    meta_dim : int
+        The dim for meta data's num.
+    output_dim : int
+        The output_class num.
+    dropout_rate : float
+        The dropout rate for all model regularization.
+
+    Methods
+    -------
+    forward(cp_file,desc,require,benefits,
+            title,meta_data,labels):
+       Compute fake prob for given texts.If provide
+       true label.It's will compute loss.
+    """
+    def __init__(self,text_input_dim,item_input_dim,embed_dim,hid_dim,
+                 fc_dim,meta_dim,output_dim,pos_weight,padding_idx=0,
+                 dropout_rate=0.1,bidirectional=False,using_pretrain_weight=True):
+        """The require args for build model.
+
+        Parameters
+        ----------
+            text_input_dim : int
+                Set the text vocab nums that you want to convert to embed vector.
+            item_input_dim : int
+                Set the item vocab nums that you want to convert to embed vector.
+            embed_dim : int
+                The embed_dim for item & job text.
+            hid_dim : int
+                The hid_dim for rnn,concat layer
+            fc_dim : int
+                The fc_dim for fake model's hid_layer.
+            meta_dim : int
+                The dim for meta data's num.
+            output_dim : int
+                The output_class num.
+            pos_weight : int
+                The positive weight for balanced class propotion.
+            padding_idx : int , optional
+                Set indice for pad token to build zero embed vector.
+            using_pretrain_weight : True ,optional
+                Whether  or not to use pretrain embed weight.
+            dropout_rate : float ,optional
+                The dropout rate for all model regularization.
+
+        """
         super(RnnFakeDetector,self).__init__()
 
-        #build embed weight
-        self.item_embed=item_extractor(item_vocab,embed_dim,padding_idx)
-        #build rnn extractors
-        self.rnn_extractors=nn.ModuleList([RnnExtractor(text_vocab,embed_dim,hid_dim,rnn_layerN,using_pretrain_weight)
+        #build model
+        self.item_embed=item_extractor(item_input_dim,embed_dim,padding_idx,
+                                       using_pretrain_weight=using_pretrain_weight)
+        self.rnn_extractors=nn.ModuleList([RnnExtractor(text_input_dim,embed_dim,hid_dim,2,using_pretrain_weight)
                                            for _ in range(4)])
-        #build concat layer
+        
         self.cp_cat=nn.Linear(hid_dim*2,hid_dim)
         self.job_cat=nn.Linear(hid_dim*2,hid_dim)
-        self.text_concat=nn.Linear(hid_dim+(embed_dim*2),hid_dim)
-        self.item_attner=Attentioner()
-        self.hid2Embed=nn.Linear(hid_dim,embed_dim)
+        self.text_concat=nn.Linear(hid_dim*2+embed_dim,hid_dim)#job+title text 
+        self.embed2hid=nn.Linear(embed_dim,hid_dim)
+        self.item_attner=Attentioner(hid_dim,hid_dim)#item attnetion
         #build downstream model
-        self.classifier=fake_classifier(meta_dim+(hid_dim*2),fc_dim,output_dim,fc_layerN)
+        self.classifier=fake_classifier(meta_dim+(hid_dim*2),fc_dim,output_dim,2)
 
         #build loss & activ.
         self.tanh=nn.Tanh()
         self.relu=nn.ReLU()
-
         self.criterion=nn.BCEWithLogitsLoss(pos_weight=torch.tensor(pos_weight))
     
     def forward(self,cp_file=None,desc=None,require=None,benefits=None,
                 title=None,meta_data=None,labels=None):
+                """
+                Compute the fake prob for given text & data.
+
+                If label is providied,then it will compute given data's loss with true label,
+                if not,The loss will be None.
+
+                Parameters
+                ----------
+                    cp_file : batch of torch.LongTensor.
+                        Indices of company_profile sequence tokens in the vocabulary. 
+                    desc : batch of torch.LongTensor.
+                        Indices of description sequence tokens in the vocabulary.
+                    require : batch of torch.LongTensor.
+                        Indices of requires sequence tokens in the vocabulary.
+                    benefits : batch of torch.LongTensor.
+                        Indices of benefits sequence tokens in the vocabulary.
+                    title : batch of torch.LongTensor.
+                        Indices of title sequence tokens in the vocabulary.
+                    meta_data : batch of torch.LongTensor.
+                        The numerics for data engineering features.
+                    labels : batch of torch.LongTensor.
+                        Class indexs for each seq.
+                       
+                Returns
+                -------
+                predict_logitics,loss
+                """
+
 
         contexts=[]
         texts=[cp_file,benefits,desc,require]
