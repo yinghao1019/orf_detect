@@ -173,35 +173,33 @@ class RnnFakeDetector(nn.Module):
     
     def forward(self,cp_file=None,desc=None,require=None,benefits=None,
                 title=None,meta_data=None,labels=None):
-                """
-                Compute the fake prob for given text & data.
+        """
+        Compute the fake prob for given text & data.
 
-                If label is providied,then it will compute given data's loss with true label,
-                if not,The loss will be None.
+        If label is providied,then it will compute given data's loss with true label,
+        if not,The loss will be None.
 
-                Parameters
-                ----------
-                    cp_file : batch of torch.LongTensor.
-                        Indices of company_profile sequence tokens in the vocabulary. 
-                    desc : batch of torch.LongTensor.
-                        Indices of description sequence tokens in the vocabulary.
-                    require : batch of torch.LongTensor.
-                        Indices of requires sequence tokens in the vocabulary.
-                    benefits : batch of torch.LongTensor.
-                        Indices of benefits sequence tokens in the vocabulary.
-                    title : batch of torch.LongTensor.
-                        Indices of title sequence tokens in the vocabulary.
-                    meta_data : batch of torch.LongTensor.
-                        The numerics for data engineering features.
-                    labels : batch of torch.LongTensor.
-                        Class indexs for each seq.
+        Parameters
+        ----------
+        cp_file : batch of torch.LongTensor.
+               Indices of company_profile sequence tokens in the vocabulary. 
+        desc : batch of torch.LongTensor.
+               Indices of description sequence tokens in the vocabulary.
+        require : batch of torch.LongTensor.
+               Indices of requires sequence tokens in the vocabulary.
+        benefits : batch of torch.LongTensor.
+               Indices of benefits sequence tokens in the vocabulary.
+        title : batch of torch.LongTensor.
+               Indices of title sequence tokens in the vocabulary.
+        meta_data : batch of torch.LongTensor.
+               The numerics for data engineering features.
+        labels : batch of torch.LongTensor.
+               Class indexs for each seq.
                        
-                Returns
-                -------
-                predict_logitics,loss
-                """
-
-
+        Returns
+        -------
+        predict_logitics,loss
+        """
         contexts=[]
         texts=[cp_file,benefits,desc,require]
 

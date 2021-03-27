@@ -87,9 +87,9 @@ class BertFakeDetector(BertPreTrainedModel):
                 
                 #build model
                 self.bert=BertModel(config)
-                self.job_rnn=nn.GRU(self.bert_hid,hid_dim,num_layers=2,
+                self.job_rnn=nn.GRU(self.bert_hid,hid_dim,num_layers=1,
                                     batch_first=True,dropout=dropout_rate)
-                self.job_rnn=nn.GRU(self.bert_hid,hid_dim,num_layers=2,
+                self.cp_rnn=nn.GRU(self.bert_hid,hid_dim,num_layers=1,
                                     batch_first=True,dropout=dropout_rate)
                 self.item_model=item_extractor(item_input_dim,embed_dim,padding_idx=padding_idx,
                                                using_pretrain_weight=using_pretrain_weight)
@@ -97,8 +97,6 @@ class BertFakeDetector(BertPreTrainedModel):
                 #build concat layer
                 self.rnn_cat=nn.Linear(self.bert_hid*2,hid_dim)
                 self.meta_cat=nn.Linear(embed_dim+meta_dim,hid_dim)
-                self.job_weighted=torch.randn((1,maxLen*2),requires_grad=True,device=torch.device('cuda:0'))
-                self.cp_weighted=torch.randn((1,maxLen*2),requires_grad=True,device=torch.device('cuda:0'))
                 #build fake classifier
                 self.fake_detector=fake_classifier(hid_dim*2,hid_dim,output_dim,2)
                 
@@ -161,14 +159,15 @@ class BertFakeDetector(BertPreTrainedModel):
                                      return_dict=return_dict)
                 #job_hidden=[Bs,seqLen,hid_dim]
                 #cp_hidden=[Bs,seqLen,hid_dim]
-                job_hiddens=self.dropout(job_outputs[1])
-                cp_hiddens=self.dropout(cp_outputs[1])
+                job_hiddens=self.dropout(job_outputs[0].mean(dim=1))
+                cp_hiddens=self.dropout(cp_outputs[0].mean(dim=1))
                 
-                #using weighted sum to extract context
-                #job_hiddens=[Bs,1,hid_dim]
-                #cp_hiddens=[Bs,1,hid_dim]
-                # job_hiddens=torch.matmul(self.job_weighted,job_hiddens[:,1:,:]).squeeze(dim=1)
-                # cp_hiddens=torch.matmul(self.cp_weighted,cp_hiddens[:,1:,:]).squeeze(dim=1)
+                #using rnn to extract context
+                #job_hiddens=[Bs,seqLen,hid]
+                #cp_hiddens=[Bs,seqLen,hid]
+                # job_hiddens,_=self.job_rnn(job_hiddens)
+                # cp_hiddens,_=self.cp_rnn(cp_hiddens)
+
                 #concat context & transform
                 #context_outputs=[Bs,hid_dim]
                 context_outputs=self.rnn_cat(torch.cat((job_hiddens,cp_hiddens),1))
@@ -178,7 +177,7 @@ class BertFakeDetector(BertPreTrainedModel):
                 #print('context outs1:{}'.format(context_outputs))
                 #extract items embed for title
                 #item_embed=[Bs,embed_dim]
-                item_embed=self.item_model(title).float()
+                item_embed=self.dropout(self.item_model(title).float())
                 # print('item_embed outs:{}'.format(item_embed))
                 #normalization meta data
                 meta_hiddens=self.bn(torch.cat((item_embed,meta_data),1))

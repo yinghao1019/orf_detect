@@ -4,7 +4,7 @@ from torch.nn import functional as F
 import numpy as np
 #Universal model params config
 model_uniConfig={"embed_dim":300,'hid_dim':512,"fc_dim":512,"meta_dim":12,
-              "output_dim":1,"dropout_rate":0.3,"using_pretrain_weight":False,
+              "output_dim":1,"dropout_rate":0.1,"using_pretrain_weight":False,
               }
 
 class fake_classifier(nn.Module):
