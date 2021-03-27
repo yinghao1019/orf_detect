@@ -31,6 +31,7 @@ class Train_pipe:
         data_iter=DataLoader(self.train_data,batch_size=self.args.train_bs,
                              sampler=sampler,collate_fn=create_mini_batch,pin_memory=True)
         
+
         if self.args.epochs>0:
             total_steps=self.args.epochs*(len(data_iter)//self.args.grad_accumulate_steps)
             num_epochs=self.args.epochs
@@ -40,6 +41,8 @@ class Train_pipe:
         
         #build lr rate scheduler
         lr_scheduler=get_linear_schedule_with_warmup(self.optimizer,self.args.warm_steps,total_steps)
+        #build grad scaler for amp operations
+        scaler=torch.cuda.amp.GradScaler()
         #build train progress bar
         train_pgb=trange(num_epochs,desc='EPOCHS')
         global_steps=0
@@ -73,19 +76,24 @@ class Train_pipe:
                             inputs[f_name]=[t.long().to(self.device) for t in data]
                         else:
                             inputs[f_name]=data.to(self.device)
+                with torch.cuda.amp.autocast():
+                    #forward pass
+                    outputs,loss=self.model(**inputs)
                     
-                #forward pass
-                outputs,loss=self.model(**inputs)
-                #compute gradient
-                loss.backward()
+                #scaling loss & compute gradient
                 global_loss+=loss.item()
+                scaler.scale(loss).backward()                
 
                 #update model weights
                 if global_steps%self.args.grad_accumulate_steps==0:
-                    #clip grad norm
+
+                    #unscaled grad for grad clipping
+                    scaler.unscale_(self.optimizer)
                     torch.nn.utils.clip_grad_norm_(self.model.parameters(),
-                                                   self.args.max_norm)                            
-                    self.optimizer.step()
+                                                   self.args.max_norm)
+
+                    scaler.step(self.optimizer)#update unscaled grad
+                    scaler.update()
                     lr_scheduler.step()
                     self.optimizer.zero_grad()#clear leaf variable grad
 
