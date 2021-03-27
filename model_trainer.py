@@ -1,4 +1,5 @@
 from torch.utils.data import DataLoader,SequentialSampler,RandomSampler
+from torch.cuda.amp import autocast
 from torch.optim import Adam
 from torch import autograd
 from utils import get_metrics
@@ -76,7 +77,7 @@ class Train_pipe:
                             inputs[f_name]=[t.long().to(self.device) for t in data]
                         else:
                             inputs[f_name]=data.to(self.device)
-                with torch.cuda.amp.autocast():
+                with autocast():
                     #forward pass
                     outputs,loss=self.model(**inputs)
                     
@@ -158,9 +159,11 @@ class Train_pipe:
                         else:
                             inputs[f_name]=data.to(self.device)
                 
-                #predict data
-                #outputs=[Bs,1]
-                outputs,loss=self.model(**inputs)
+                #using amp process
+                with autocast():
+                    outputs,loss=self.model(**inputs)
+
+                #compute loss
                 total_loss+=loss.item()
 
                 #get predicts & labels
