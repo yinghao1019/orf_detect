@@ -89,7 +89,7 @@ class BertDataset(Dataset):
         job_segs=[0]+allSegment_ids[1]+allSegment_ids[2]
         cp_segs=[0]+allSegment_ids[0]+allSegment_ids[3]
 
-        #extract topics
+        # extract topics
         desc_bow=[w for sent in example[1] for w in sent]
         if desc_bow:
             desc_bow=self.lda_vocab.doc2bow(desc_bow)
@@ -233,46 +233,27 @@ class process_data:
         return InputFeature(cp_file=cp_profile,desc=desc,require=requires,benefits=benefits,title=title,
                             meta_data=meta_data,label=int(data.fraudulent))
 
-def create_mini_batch(tensors):
-    batch_dict=defaultdict(list)
-    field_names=tensors[0]._fields
-    #get  tensor
-    if hasattr(tensors[0],'job_segs'):
-        #collect data
-        for example in tensors:
-            #convert to name-value pair
-            data_items=example._asdict().items()
-            for (f_name,data) in data_items:
-                batch_dict[f_name].append(torch.tensor(data))
-        
-        #pad sequence for text tensors
-        for idx,f_name in enumerate(list(batch_dict.keys())[:4]):
-            batch_dict[f_name]=pad_sequence(batch_dict[f_name],batch_first=True)
-            #create mask tensors
-            if idx<2:
-                mask_tensors=torch.ones(batch_dict[f_name].size())
-                mask_name=f_name.split('_')[0]
-                batch_dict[mask_name+'_masks']=mask_tensors.masked_fill_(batch_dict[f_name]==0,0)
-        
-        #concat other tensors(meta data,label)
-        for f_name in tensors[0]._fields[-2:]:
-            batch_dict[f_name]=torch.stack(batch_dict[f_name])
+def create_mini_batch(batchs):
+    #group each field for list of tensors
+    field_names=batchs[0]._fields
+    batchs=list(zip(*batchs))
 
-    else:
-        #collect data
-        for example in tensors:
-            #convert to name-value pair
-            data_items=example._asdict().items()
-            for (f_name,data) in data_items:
-                batch_dict[f_name].append(torch.tensor(data))
-            
-        #pad tokens
-        for f_name in field_names[:4]:
-            batch_dict[f_name]=pad_sequence(batch_dict[f_name],batch_first=True)
-        
-        #concat other tensors(meta data,label)
-        for f_name in field_names[-2:]:
-            batch_dict[f_name]=torch.stack(batch_dict[f_name])
+
+    #pad tokens with first 4 field convert to tensor
+    for idx,b in enumerate(batchs[:4]):
+        batchs[idx]=pad_sequence(b,batch_first=True)
+    #stack tensors
+    for idx,t in enumerate(batchs[-2:]):
+        batchs[-2+idx]=torch.stack(t)
+
+    #create field dict
+    batch_dict=dict(zip(field_names,batchs))
+    #create tensors
+    if 'job_segs' in field_names:
+        for f,v in list(batch_dict.items())[:2]:
+            masks=torch.ones_like(v).masked_fill_(v==0,0)#create mask tensors
+            n=f.split('_')[0]
+            batch_dict[n+'_masks']=masks
     
     return batch_dict
 #truncate dataset

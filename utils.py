@@ -69,6 +69,6 @@ MODEL_CLASSES={
     'gru-attn':(model_uniConfig,load_text_vocab,RnnFakeDetector),
 }
 MODEL_PATH={
-    'bert-dnn':'bert-large-uncased',
+    'bert-dnn':'bert-base-uncased',
     'rnn-dnn':'gru-attn'
 }
