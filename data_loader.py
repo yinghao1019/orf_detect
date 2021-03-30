@@ -106,8 +106,10 @@ class BertDataset(Dataset):
 
         #combine other meta data=[orig,wordN,topic_distri]
         meta_data=example.meta_data+wordN+desc_topics
-        return BertFeature(job_tokens=job_tokens,cp_tokens=cp_tokens,job_segs=job_segs,
-                           cp_segs=cp_segs,title=item,meta_data=meta_data,label=int(example.label))
+        return BertFeature(job_tokens=torch.tensor(job_tokens),cp_tokens=torch.tensor(cp_tokens),
+                           job_segs=torch.tensor(job_segs),cp_segs=torch.tensor(cp_segs),
+                           title=torch.tensor(item),meta_data=torch.tensor(meta_data),
+                           label=torch.tensor([example.label]))
 
     def __len__(self):
         return len(self.data)
@@ -141,7 +143,7 @@ class RnnDataset(Dataset):
             token_ids=[]
             if doc:
                 for sent in doc[:max_sent]:
-                    for w in doc:
+                    for w in sent:
                         if w in self.vocab:
                             word_index=self.vocab.index(w)
                         else:
@@ -154,7 +156,7 @@ class RnnDataset(Dataset):
             if len(token_ids)>self.args.max_textLen:
                 token_ids=token_ids[:self.args.max_textLen]
 
-            allToken_ids.append(token_ids)
+            allToken_ids.append(torch.tensor(token_ids))
 
         #extract topics
         desc_bow=[w for sent in example[1] for w in sent]
@@ -163,20 +165,19 @@ class RnnDataset(Dataset):
             desc_topics=self.lda_model.get_document_topics(desc_bow)
             desc_topics=corpus2dense([desc_topics],num_terms=self.lda_model.num_topics,num_docs=1).T.tolist()[0]
         else:
-            desc_topics=[0.0]*self.lda_model.num_topics
+            desc_topics=[0.0]*self.lda_model.num_topicsimport 
 
         #convert title to index
         if example.title:
             item=[self.item_vocab.index(w) if w in self.item_vocab else self.item_vocab.index('[UNK]') for w in example.title]
         else:
             item=[self.item_vocab.index('[PAD]')]
-        #fetch other data=[meta_data,labels]
-        other_data=list(example[5:])
-        other_data[0]+=(wordN+desc_topics)#add feature[wordN,topics] to metadata
-        if len(other_data[0])==17:
-            print('Other_data',key)
+        #fetch other data
+        meta_data=example.meta_data+wordN+desc_topics
+
+
         #combine data
-        features=allToken_ids+[item]+other_data
+        features=allToken_ids+[torch.tensor(item)]+[torch.tensor(meta_data)]+[torch.tensor([example.label])]
 
         #data memeber=(token_ids for 4 text fields,segment_ids for 4 text fields,
         #               title,metadata,label)
@@ -284,9 +285,8 @@ def load_and_cacheEamxples(args,tokenizer,mode):
 
     #build file path
     file_path=os.path.join(args.data_dir,args.task,
-                           'cached_{}_{}_{}.zip'.format(
-                            args.task,mode,
-                            list(filter(None,args.model_name_or_path.split('/'))).pop(-1)))
+                           'cached_{}_{}_process_data.zip'.format(
+                            args.task,mode))
     
     if os.path.isfile(file_path):
         logger.info(f'Loading feature from {file_path}')
