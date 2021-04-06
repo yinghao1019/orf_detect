@@ -3,10 +3,10 @@ import numpy as np
 import spacy
 import os
 import logging
-import linecache
 import argparse
 import string
 from collections import Counter
+from gensim.models.fasttext import FastText
 from gensim.corpora.dictionary import Dictionary
 import sys
 sys.path.append(os.getcwd())# add path to module search path
@@ -22,11 +22,21 @@ def combine_data(data,col_names):
     df=data.loc[:,col_names].values.reshape(-1)
     return df[nonZero_df]
 
+def pretrain_embed_model(train_corpus,vector_dim,min_freq,model_type,max_vocab,
+                         negative=10,epochs=7):
+    #training fastText model
+    embed=1 if model_type=='skip-gram' else 0
+    model=FastText(min_count=min_freq,sg=embed,vector_size=vector_dim,max_vocab_size=max_vocab,
+                  negative=negative,epochs=epochs)
+    model.build_vocab(train_corpus)
+    model.train(train_corpus,total_examples=len(train_corpus),epochs=model.epochs)
+    logger.info('Train pretrain embed model success!')
 
+    return model
 
 def build_vocab(corpus,spec_tokens,max_size,min_freq,speical_first):
     #count vocab
-    vocab_count=Counter(corpus)
+    vocab_count=Counter([w for text in corpus for w in text])
     #select top max_size word into vocab
     vocab=vocab_count.most_common(max_size)
     #filter word with freq smaller than vocab_freq
@@ -55,58 +65,39 @@ def save_vocab_file(vocab,data_dir,file_path):
     except:
         logger.info('vocab File saved failed!')
 
-def create_embeds(vocab,query,embed_path,args):
-    #get pretrain vocab num and dim
-    num,dim=map(int,linecache.getline(embed_path,1).strip().split())
+def create_embeds(vocab,model,embed_path,args):    
     #get vocab nums
     vocab_num=len(vocab.keys())
     #build storage vocab embed array
-    vocab_embed=np.zeros((vocab_num,dim))
+    vocab_embed=np.zeros((vocab_num,args.embed_dim))
 
-    logger.info(f'pretrain word embed nums:{num} dim:{dim}')
+    logger.info(f'Create word embed with fastText! \n nums:{vocab_num} dim:{args.embed_dim}')
     logger.info(f'vocab nums:{vocab_num} \t top5 word pair:{list(vocab.items())[:5]}')
     logger.info(f'Embed vector shape:{vocab_embed.shape}')
     #get pretrain emebd_dim
     try:
-        undefine_w=[]
         item=0
         for w,w_id in vocab.items():
-            if w in query:
-                #get word data in pretrain file
-                vector=linecache.getline(embed_path,int(query[w])+1).strip().split(' ')[1:]
-                vocab_embed[w_id]=np.array(list(map(float,vector)))
-            else:
-                vocab_embed[w_id]=np.random.randn(dim)
-                undefine_w.append(w)
-            
+            vocab_embed[w_id]=model.wv[str(w)]
             item+=1
             if item%500==0:
                 logger.info(f'Already convert {item} word to embed success!')
-        logger.info('show pretrain embed:\n{}'.format(vocab_embed[20:23]))
-        logger.info('Undefined word num:{}'.format(len(undefine_w)))    
+        logger.info('show pretrain embed:\n{}'.format(vocab_embed[20:23]))   
     
     except:
-        logger.info('Loading pretrain embed error!')
-        print('Embed_path:',embed_path)
+        logger.info('Create pretrain embed error!')
             
 
     #save vector to disk
-    save_dir=os.path.join(args.data_dir,args.task,'vocab_embed')
+    save_dir=os.path.join(embed_path,'vocab_embed')
     #detect vocab dir
     if not os.path.exists(os.path.join(save_dir)):
         os.makedirs(save_dir)
         logger.info(f'{save_dir} not exists!Create new one')
 
     try:
-        #write undefine w to disk
-        with open(os.path.join(save_dir,f"{vocab_num}_undefined_word.txt"),'w',encoding='utf-8') as f_w:
-            for u_w in undefine_w:
-                f_w.write(u_w+'\n')
-        logger.info('Save undefined word success!')
-
         #set path
-        vocab_file_path=f'fastText_{dim}d_{vocab_num}_embed'
-
+        vocab_file_path=f'fastText_{args.embed_dim}d_{vocab_num}_embed'
         #save!
         np.save(os.path.join(save_dir,vocab_file_path),vocab_embed)
         logger.info(f'Success save pretrain vector to {save_dir}')
@@ -119,7 +110,6 @@ def create_embeds(vocab,query,embed_path,args):
 def main(args):
     #set path variable
     data_path=os.path.join(args.data_dir,args.task)
-    embed_path=os.path.join(data_path,args.pretrain_embed_file)
     #load nlp model
     spacy.require_gpu()
     en_nlp=spacy.load(args.model_type)
@@ -145,9 +135,9 @@ def main(args):
         #text prepare
         context_data=combine_data(df,args.select_context_name).tolist()
         context_corpus=corpus_process(context_data,en_nlp)
-        context_corpus=[[w for sent in doc for w in sent]for doc in context_corpus]
         # build lda model vocab
-        context_dict=Dictionary(context_corpus)
+        documents=[[w for sent in doc for w in sent] for doc in context_corpus]
+        context_dict=Dictionary(documents)
         context_dict.filter_extremes(1,1,args.max_context_vocab)
         #add special token
         context_vocab=[w for w in set(context_dict.token2id).difference(set(special_tokens))]
@@ -163,9 +153,14 @@ def main(args):
         save_vocab_file(context_vocab,data_path,args.context_vocab_file)
         context_dict.save(args.lda_vocab_file)
 
-        logger.info('Create pretrain embed vector..')
-
-        create_embeds(context_dict.token2id,pretrain_query,embed_path,args)
+        logger.info('Build pretrain embed model..')
+        #build corpus(list of sents)
+        sents=[[w.lower() for w in sent] for doc in context_corpus for sent in doc]
+        #build embed model
+        embed_model=pretrain_embed_model(sents,args.embed_dim,2,
+                                        args.embed_model,100000)
+        logger.info('Create item_vocab embed !')
+        create_embeds(context_dict.token2id,embed_model,data_path,args)
 
     if args.select_item_name:
         
@@ -175,9 +170,9 @@ def main(args):
         item_data=df[args.select_item_name].values.tolist()
         item_corpus=list(map(text_clean,item_data))#clean text
 
-        #build title columns vocab
-        item_corpus=[w.lower() for doc in item_corpus for w in doc.split()
-                    if (w not in string.punctuation) and w.isalpha()]
+        #build title vocab 
+        item_corpus=[[w.lower() for w in doc.split() if (w not in string.punctuation) and w.isalpha()]
+                     for doc in item_corpus]
         item_vocab,item_token2id=build_vocab(item_corpus,special_tokens,args.max_item_size,
                                                args.min_item_freq,args.spec_first)
         
@@ -186,29 +181,28 @@ def main(args):
         #save item vocab
         save_vocab_file(item_vocab,data_path,args.str_vocab_file)
 
-        logger.info('Create pretrain embed vector..')
-        
+        logger.info('Build pretrain embed model..')
+        embed_model=pretrain_embed_model(item_corpus,args.embed_dim,args.min_item_freq,
+                                        args.embed_model,30000)
+        logger.info('Create item_vocab embed !')
         #create item embed vector
-        create_embeds(item_token2id,pretrain_query,embed_path,args)
+        create_embeds(item_token2id,embed_model,data_path,args)
     
 
 
 if __name__ == '__main__':
     parser=argparse.ArgumentParser()
     parser.add_argument('--data_dir',type=str,default=r'.\Data',help='Root dir for save data')
-    parser.add_argument('--task',type=str,default=None,required=True,choices=['fakeJob'],help='The training Model task.')
-    parser.add_argument('--mode',type=str,default=None,required=True,choices=['train','test'],
+    parser.add_argument('--task',type=str,required=True,choices=['fakeJob'],help='The training Model task.')
+    parser.add_argument('--mode',type=str,required=True,choices=['train','test'],
                         help='Determined use train set or test set.')
 
     parser.add_argument('--str_vocab_file',type=str,default='item_vocab.txt',help='The file name for save item vocab')
     parser.add_argument('--context_vocab_file',type=str,default='jobText_vocab.txt',help='The file name for save context vocab.')
     parser.add_argument('--lda_vocab_file',type=str,default=r'.\saved_model\process_model\topic_model\lda_vocab.pkl',
                         help='The file name for lda vocab')
-    parser.add_argument('--pretrain_embed_file',type=str,default=r'fastText\wiki-news-300d-1M-subword.vec',
-                        help='The path for fastText embedding file.')
-
     parser.add_argument('--max_item_size',type=int,default=30000,help='The max vocab size for title.')
-    parser.add_argument('--min_item_freq',type=int,default=3,help='The minimum frequency needed to include a token in title vocab.')
+    parser.add_argument('--min_item_freq',type=int,default=2,help='The minimum frequency needed to include a token in title vocab.')
     parser.add_argument('--max_context_vocab',type=int,default=30000,help='Max vocab size for context word')
     parser.add_argument('--spec_first',action='store_true',
                         help='Whether to add special tokens into the vocabulary at first.If not call,special token will add into last')
@@ -219,6 +213,9 @@ if __name__ == '__main__':
 
     parser.add_argument('--encode_format',type=str,default='utf-8',help="The read data's encoding format")
     parser.add_argument('--model_type',type=str,default='en_core_web_md',help='The model name for nlp process.')
+
+    parser.add_argument('--embed_dim',type=int,default=300,help='The pretrain embed model dim.')
+    parser.add_argument('--embed_model',type=str,default='skip-gram',choices=['skip-gram','cbow'],help='The pretrain embed model.')
 
     args=parser.parse_args()
     set_log_config()

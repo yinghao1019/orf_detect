@@ -143,11 +143,5 @@ def corpus_process(data,nlp_pipe):
     #using nlp_pipeline to handle text
     data=list(map(lambda x:nlp_pipe(x.lower()) ,data))
     corpus=list(map(doc_process,data))
-    corpus=[[w for sent in doc for w in sent if w not in en_stopwords] for doc in corpus]
     logger.info('Top 3 data {}'.format(corpus[:3]))
-
     return corpus
-# rule_map={"campaignsrun":"campaigns run ","methodicallyMaintain":"methodically Maintain","skillsmotivated":"skills motivated","themYou":"them .You","businessAssisting":"business Assisting",
-#           "CelebrationsLunchtime":"Celebrations Lunchtime","EnglishActive":"English Active","job Ceiling":"job Ceiling","GlanceA":"Glance A","ForBy":"For By",
-# "platformWork":"platform Work","fiit":"fit","ManagerBasic":"Manager Basic","resourcesExcellent":"resources Excellent"," skillsSysadmin":" skills Sysadmin",
-# "customersEstablish":"customers Establish","clientsyou":"clients you","projects Proficient":"projects proficient","routes An":"routes An","oilfied":"oil field"}
