@@ -1,7 +1,7 @@
-from data_loader import load_and_cacheEamxples
+from data_loader import load_and_cacheEamxples,create_mini_batch
 from model_trainer import Train_pipe
-from utils import load_item_vocab,load_text_vocab,load_special_tokens,MODEL_CLASSES,MODEL_PATH,set_log_config,set_rndSeed
-
+from utils import *
+from torch.utils.data import DataLoader
 import argparse
 import logging
 import os
@@ -23,49 +23,55 @@ def main(args):
         uni_config=MODEL_CLASSES[args.used_model][3]
         uni_config['item_input_dim']=len(items_vocab)
         uni_config['pos_weight']=args.pos_weights
-        uni_config['maxLen']=args.max_textLen
+        uni_config['maxLen']=args.max_textLen       
         model=MODEL_CLASSES[args.used_model][2].from_pretrained(pretrained_name,config=model_config,**uni_config)
-        
-
         
         #add spec vocab to extend vocab num
         logger.info(f'Vocab num that before add new spec token:{len(tokenizer)}')
         tokenizer.additional_special_tokens=spec_vocab
         tokenizer.add_tokens(spec_vocab,special_tokens=True)
-
+        # uni_config['vocab_num']=len(tokenizer)
         logger.info(f'Added vocab:{tokenizer.get_added_vocab()}')
         logger.info(f'Vocab num that after add new spec token:{len(tokenizer)}')
-
-        #resize model embed vocab num
+        #extend model input dim
         model.resize_token_embeddings(len(tokenizer))
+        
     elif args.used_model.startswith('rnn'):
 
         pretrained_name=MODEL_PATH[args.used_model]#get pretrain type
-        model_config=MODEL_CLASSES[pretrained_name][0]
+        uni_config=MODEL_CLASSES[pretrained_name][0]
         tokenizer=MODEL_CLASSES[pretrained_name][1](args)
         #insert vocab nums
-        model_config['text_vocab']=len(tokenizer)
-        model_config['item_vocab']=len(items_vocab)
-        model_config['rnn_layerN']=2
-        model_config['pos_weight']=args.pos_weights
+        uni_config['text_input_dim']=len(tokenizer)
+        uni_config['item_input_dim']=len(items_vocab)
+        uni_config['pos_weight']=args.pos_weights
         #build model
-        model=MODEL_CLASSES[pretrained_name][2](**model_config)
+        model=MODEL_CLASSES[pretrained_name][2](**uni_config)
         
     logger.info('Start to loading data !')
     #loading data
     train_data=load_and_cacheEamxples(args,tokenizer,'train')
     val_data=load_and_cacheEamxples(args,tokenizer,'test')
-    #build pipeline
-    pipe=Train_pipe(train_data,val_data,model,args)
+    
+    
+    
 
     #training model
     if args.do_train:
         logger.info('Start to train model !')
+        #build training pipeline
+        pipe=Train_pipe(train_data,val_data,model,uni_config,args)
         pipe.train_model()
-    
+
+        #evalutae model performance separately
+        pipe.eval_model(train_data)
     if args.do_eval:
         logger.info('Start to eval model !')
-        pipe.eval_model(train_data)
+        if args.used_model.startswith('rnn'):
+            pipe=Train_pipe.load_model(model,train_data,val_data,args)
+        else:
+            pretrain_class=MODEL_CLASSES[args.used_model][2]
+            pipe=Train_pipe.load_model(pretrain_class,train_data,val_data,args)
         pipe.eval_model(val_data)
 
 if __name__=='__main__':
