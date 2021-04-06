@@ -287,7 +287,7 @@ def load_and_cacheEamxples(args,tokenizer,mode):
 
     #build file path
     file_path=os.path.join(args.data_dir,args.task,
-                           'cached_{}_{}_{}_data1.zip'.format(
+                           'cached_{}_{}_{}_data2.zip'.format(
                             args.task,mode,args.pos_weights[0]))
     
     if os.path.isfile(file_path):
@@ -296,7 +296,7 @@ def load_and_cacheEamxples(args,tokenizer,mode):
     else:
         logger.info(f'Build {mode} dataset!')
         #read
-        datasets=pd.read_csv(os.path.join(args.data_dir,args.task,mode,'data1.csv'),encoding='utf-8')
+        datasets=pd.read_csv(os.path.join(args.data_dir,args.task,mode,'data2.csv'),encoding='utf-8')
         #external process for train dataset
         if mode=='train':
             #remove duplicate example
