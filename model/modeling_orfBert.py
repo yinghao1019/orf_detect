@@ -2,7 +2,7 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 from transformers import BertModel,BertPreTrainedModel,BertTokenizer,BertConfig
-from .utils_model import fake_classifier,item_extractor
+from .utils_model import fake_classifier,item_extractor,Attentioner
 
 class BertFakeDetector(BertPreTrainedModel):
         """
@@ -44,7 +44,7 @@ class BertFakeDetector(BertPreTrainedModel):
         
         def __init__(self,config,hid_dim,item_input_dim,embed_dim,fc_dim,
                      meta_dim,output_dim,pos_weight,maxLen,padding_idx=0,
-                     using_pretrain_weight=True,dropout_rate=0.2):
+                     vocab_num,using_pretrain_weight=True,dropout_rate=0.2):
                 """The require args for build model.
 
                 Parameters
@@ -86,7 +86,8 @@ class BertFakeDetector(BertPreTrainedModel):
                 self.config=config
                 
                 #build model
-                self.bert=BertModel(config)
+                self.bert1=BertModel(config)
+                self.bert2=BertModel(config)
                 self.job_rnn=nn.GRU(self.bert_hid,hid_dim,num_layers=1,
                                     batch_first=True,dropout=dropout_rate)
                 self.cp_rnn=nn.GRU(self.bert_hid,hid_dim,num_layers=1,
@@ -98,8 +99,8 @@ class BertFakeDetector(BertPreTrainedModel):
                 self.rnn_cat=nn.Linear(self.bert_hid*2,hid_dim)
                 self.meta_cat=nn.Linear(embed_dim+meta_dim,hid_dim)
                 #build fake classifier
-                self.fake_detector=fake_classifier(hid_dim*2,hid_dim,output_dim,2)
-                
+                self.fake_detector=fake_classifier(hid_dim*3,hid_dim,output_dim,2)
+                self.attner=Attentioner(embed_dim,self.bert_hid,self.bert_hid,hid_dim)
                 #build other func
                 self.tanh=nn.Tanh()
                 self.dropout=nn.Dropout(dropout_rate)
@@ -107,6 +108,8 @@ class BertFakeDetector(BertPreTrainedModel):
                 self.bn=nn.BatchNorm1d(embed_dim+meta_dim)
                 self.criterion=nn.BCEWithLogitsLoss(pos_weight=torch.tensor(pos_weight))
 
+                self.bert1.resize_token_embeddings(vocab_num)
+                self.bert2.resize_token_embeddings(vocab_num)
         def forward(self,job_tokens=None,cp_tokens=None,job_segs=None,
                 cp_segs=None,job_masks=None,cp_masks=None,
                 title=None,meta_data=None,label=None,
@@ -159,14 +162,21 @@ class BertFakeDetector(BertPreTrainedModel):
                                      return_dict=return_dict)
                 #job_hidden=[Bs,seqLen,hid_dim]
                 #cp_hidden=[Bs,seqLen,hid_dim]
-                job_hiddens=self.dropout(job_outputs[0].mean(dim=1))
-                cp_hiddens=self.dropout(cp_outputs[0].mean(dim=1))
-                
-                #using rnn to extract context
+                job_hiddens=job_outputs[0]
+                cp_hiddens=cp_outputs[0]
+
+                #extract items embed for title
+                #item_embed=[Bs,embed_dim]
+                item_embed=self.dropout(self.item_model(title).float())
+
+                #item attend to job contexts
+                item_attend=self.attner(item_embed,job_hiddens[:,1:,:],job_hiddens[:,1:,:])
+
+                #using mean to extract context
                 #job_hiddens=[Bs,seqLen,hid]
                 #cp_hiddens=[Bs,seqLen,hid]
-                # job_hiddens,_=self.job_rnn(job_hiddens)
-                # cp_hiddens,_=self.cp_rnn(cp_hiddens)
+                job_hiddens=job_hiddens.mean(dim=1)
+                cp_hiddens=cp_hiddens.mean(dim=1)
 
                 #concat context & transform
                 #context_outputs=[Bs,hid_dim]
@@ -175,9 +185,7 @@ class BertFakeDetector(BertPreTrainedModel):
                 
                 context_outputs=self.leakyRelu(context_outputs)
                 #print('context outs1:{}'.format(context_outputs))
-                #extract items embed for title
-                #item_embed=[Bs,embed_dim]
-                item_embed=self.dropout(self.item_model(title).float())
+                
                 # print('item_embed outs:{}'.format(item_embed))
                 #normalization meta data
                 meta_hiddens=self.bn(torch.cat((item_embed,meta_data),1))
@@ -186,13 +194,13 @@ class BertFakeDetector(BertPreTrainedModel):
                 # print('meta hid outs1:{}'.format(meta_hiddens))
                  
                 #output_logitics=[Bs,1]
-                hiddens=torch.cat((context_outputs,meta_hiddens),1)
+                hiddens=torch.cat((context_outputs,meta_hiddens,item_attend),1)
                 # print('Before final output:{}'.format(hiddens))
                 output_logitics=self.fake_detector(hiddens)
                 # print('final output:{}'.format(output_logitics))
                 loss=None
                 if label is not None:
-                        loss=self.criterion(output_logitics,label.unsqueeze(1).float())
+                        loss=self.criterion(output_logitics,label.float())
                 
                 return output_logitics,loss
 

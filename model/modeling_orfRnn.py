@@ -60,7 +60,7 @@ class RnnExtractor(nn.Module):
 
         #determined using pretrain weight or not for job texts
         if using_pretrain_weight:
-            text_embed=np.load(r'./Data/fakeJob/vocab_embed/fastText_300d_25502_embed.npy')
+            text_embed=np.load(r'./Data/fakeJob/vocab_embed/fastText_256d_31602_embed.npy')
             text_embed=torch.from_numpy(text_embed)
             self.embed_layer=nn.Embedding.from_pretrained(text_embed,freeze=False,padding_idx=padding_idx)
         else:
@@ -121,7 +121,7 @@ class RnnFakeDetector(nn.Module):
     """
     def __init__(self,text_input_dim,item_input_dim,embed_dim,hid_dim,
                  fc_dim,meta_dim,output_dim,pos_weight,padding_idx=0,
-                 dropout_rate=0.1,bidirectional=False,using_pretrain_weight=True):
+                 dropout_rate=0.1,bidirectional=False,using_pretrain_weight=False):
         """The require args for build model.
 
         Parameters
@@ -160,19 +160,20 @@ class RnnFakeDetector(nn.Module):
         
         self.cp_cat=nn.Linear(hid_dim*2,hid_dim)
         self.job_cat=nn.Linear(hid_dim*2,hid_dim)
-        self.text_concat=nn.Linear(hid_dim*2+embed_dim,hid_dim)#job+title text 
+        self.text_concat=nn.Linear(hid_dim*3,hid_dim)#job+title text 
         self.embed2hid=nn.Linear(embed_dim,hid_dim)
-        self.item_attner=Attentioner(hid_dim,hid_dim)#item attnetion
+        self.item_attner=Attentioner(hid_dim,hid_dim,hid_dim,hid_dim)#item attnetion
+        self.bn=nn.BatchNorm1d(meta_dim)
         #build downstream model
-        self.classifier=fake_classifier(meta_dim+(hid_dim*2),fc_dim,output_dim,2)
+        self.classifier=fake_classifier(meta_dim+(hid_dim*2),fc_dim,output_dim,3)
 
-        #build loss & activ.
+        #build loss & activation.
         self.tanh=nn.Tanh()
         self.relu=nn.ReLU()
         self.criterion=nn.BCEWithLogitsLoss(pos_weight=torch.tensor(pos_weight))
     
     def forward(self,cp_file=None,desc=None,require=None,benefits=None,
-                title=None,meta_data=None,labels=None):
+                title=None,meta_data=None,label=None):
         """
         Compute the fake prob for given text & data.
 
@@ -204,12 +205,13 @@ class RnnFakeDetector(nn.Module):
         texts=[cp_file,benefits,desc,require]
 
         for  rnn,text in zip(self.rnn_extractors,texts):
-            context=rnn(text)#using rnn to capture context
+            context=rnn(text.long())#using rnn to capture context
             contexts.append(context)
         
         #concat & transform each text
-        cp_context=torch.hstack([torch.mean(t,1) for t in contexts[:2]])
-        job_context=torch.hstack([torch.mean(t,1) for t in contexts[2:]])
+        #use mean pooling for each context
+        cp_context=torch.hstack([t.mean(dim=1) for t in contexts[:2]])
+        job_context=torch.hstack([t.mean(dim=1) for t in contexts[2:]])
 
         cp_context=self.tanh(self.cp_cat(cp_context))
         job_context=self.tanh(self.job_cat(job_context))
@@ -219,11 +221,11 @@ class RnnFakeDetector(nn.Module):
 
         #convert query context
         #desc_context=[Bs,seqLen,embed_dim]
-        desc_context=self.hid2Embed(contexts[2])
-
+        item_contexts=self.embed2hid(item_contexts.float())
+        desc_contexts=contexts[2]
         #compute attention for item
         #[Bs,embed_dim]
-        item_attned=self.item_attner(item_contexts,desc_context.transpose(1,2),desc_context)
+        item_attned=self.item_attner(item_contexts,desc_contexts,desc_contexts)
 
         #concat item & job_context
         #job_context=[Bs,hid_dim]
@@ -231,11 +233,11 @@ class RnnFakeDetector(nn.Module):
 
         #feed job_context with item,meta_data,cp_context to downstream model
         #output logitics=[Bs,1]
-        output_logitics=self.classifier(torch.cat((job_context,cp_context,meta_data),1))
+        output_logitics=self.classifier(torch.cat((job_context,cp_context,self.bn(meta_data)),1))
 
         loss=None
-        if labels is not None:
-            loss=self.criterion(output_logitics.reshape(-1),labels)
+        if label is not None:
+            loss=self.criterion(output_logitics,label.float())
         
         return output_logitics,loss
 

@@ -3,8 +3,8 @@ from torch import nn
 from torch.nn import functional as F
 import numpy as np
 #Universal model params config
-model_uniConfig={"embed_dim":300,'hid_dim':512,"fc_dim":512,"meta_dim":12,
-              "output_dim":1,"dropout_rate":0.1,"using_pretrain_weight":False,
+model_uniConfig={"embed_dim":256,'hid_dim':512,"fc_dim":512,"meta_dim":12,
+              "output_dim":1,"dropout_rate":0.1,"using_pretrain_weight":True,
               }
 
 class fake_classifier(nn.Module):
@@ -126,7 +126,7 @@ class item_extractor(nn.Module):
 
         #build embed layer
         if using_pretrain_weight:
-            item_embeds=np.load(r'./Data/fakeJob/vocab_embed/fastText_300d_1061_embed.npy')
+            item_embeds=np.load(r'./Data/fakeJob/vocab_embed/fastText_256d_1312_embed.npy')
             item_embeds=torch.from_numpy(item_embeds)
             self.embed_layer=nn.Embedding.from_pretrained(item_embeds,freeze=False,
                                                           padding_idx=padding_idx)
@@ -152,7 +152,7 @@ class item_extractor(nn.Module):
         #using mean pooling to compute item context 
         for tensors in item_tensors:
             #context_tensors=[1,embed_dim] and save them
-            context_tensors=self.embed_layer(tensors).sum(dim=0)
+            context_tensors=self.embed_layer(tensors.long()).sum(dim=0)
             embed_tensors.append(context_tensors)
         
         #concat tensors=[Bs,embed_dim]
@@ -180,7 +180,7 @@ class Attentioner(nn.Module):
         The callable method will perform sacled dot product attention
         on q_hid,k_hid,v_hid.
     """
-    def __init__(self,input_dim,hid_dim):
+    def __init__(self,query_dim,key_dim,value_dim,hid_dim):
         """
         Constructs architecture for the attention mechansim.
 
@@ -192,12 +192,14 @@ class Attentioner(nn.Module):
                  Set the dim of transform tensor.
         """
         super(Attentioner,self).__init__()
-        self.input_dim=input_dim
+        self.query_dim=query_dim
+        self.key_dim=key_dim
+        self.value_dim=value_dim
         self.hid_dim=hid_dim
 
-        self.query_layer=nn.Linear(input_dim,hid_dim)
-        self.key_layer=nn.Linear(input_dim,hid_dim)
-        self.value_layer=nn.Linear(input_dim,hid_dim)
+        self.query_layer=nn.Linear(query_dim,hid_dim)
+        self.key_layer=nn.Linear(key_dim,hid_dim)
+        self.value_layer=nn.Linear(value_dim,hid_dim)
         self.softmax=nn.Softmax(dim=2)
         
     def forward(self,q_hid,k_hid,v_hid):
