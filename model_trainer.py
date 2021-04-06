@@ -2,7 +2,7 @@ from torch.utils.data import DataLoader,SequentialSampler,RandomSampler
 from torch.cuda.amp import autocast
 from torch.optim import Adam
 from torch import autograd
-from utils import get_metrics
+from utils import get_metrics,count_parameters
 from data_loader import create_mini_batch
 from transformers import get_linear_schedule_with_warmup,PreTrainedModel,AdamW
 
@@ -11,21 +11,35 @@ import pandas as pd
 import torch
 import argparse
 import os
+import json
 import logging
 from tqdm import tqdm,trange
 logger=logging.getLogger(__name__)
 
 class Train_pipe:
-    def __init__(self,train_dataset,val_dataset,model,args):
+    def __init__(self,train_dataset,val_dataset,model,model_config,args):
         self.train_data=train_dataset
         self.val_data=val_dataset
         self.args=args
+        self.model_config=model_config
         self.model=model
         self.device=torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
         self.model.to(self.device)
         self.optimizer=AdamW(self.model.parameters(),args.lr,weight_decay=args.weight_decay)
     def train_model(self):
-        save_model_dir=os.path.join(self.args.saved_dir,self.args.train_model_dir)#save model dir
+        #build save model dir
+        save_model_dir=os.path.join(self.args.saved_dir,self.args.train_model_dir)
+        #create model dir
+        if os.path.isdir(save_model_dir):
+            logger.info(f'Model dir: {save_model_dir} Already exist!')
+        else:
+            logger.info(f'Model dir: {save_model_dir} is not exist!')
+            os.makedirs(save_model_dir)
+            logger.info('Create saved model success!')
+        #save universal config
+        with open(os.path.join(save_model_dir,'uni_config.json'),'w') as f_w:
+            json.dump(self.model_config,f_w)
+        logger.info(f'Save model universal config to {save_model_dir} success!')
 
         #build data loader
         sampler=RandomSampler(self.train_data)
@@ -50,6 +64,9 @@ class Train_pipe:
         global_loss=0
         global_predicts=None
         global_labels=None
+
+        logger.info(f'Model trainable params nums:{count_parameters(self.model)}')
+        logger.info(f'Model architecture:{self.model}')
 
         #train!
         logger.info('****Start to Training!****')
@@ -131,7 +148,7 @@ class Train_pipe:
                     
                 #save model state for each step ranges
                 if (global_steps%self.args.save_steps==0) and (self.args.save_steps>0):
-                    self.save_model(self.model,save_model_dir)
+                    self.save_model(save_model_dir)
                 
                 if 0<(total_steps*self.args.grad_accumulate_steps)<global_steps:
                     epochs_pgb.close()
@@ -139,7 +156,7 @@ class Train_pipe:
             if 0<(total_steps*self.args.grad_accumulate_steps)<global_steps:
                 train_pgb.close()
                 break
-        self.save_model(self.model,save_model_dir)
+        self.save_model(save_model_dir)
     def eval_model(self,eval_data):
         #build eval data loader
         sampler=SequentialSampler(eval_data)
@@ -190,21 +207,13 @@ class Train_pipe:
         for n,s in eval_metrics.items():
             logger.info(f'{n} : {s}')
 
-    def save_model(self,model,save_model_dir):
-        #create model dir
-        if os.path.isdir(save_model_dir):
-            logger.info(f'Model dir: {save_model_dir} Already exist!')
-        else:
-            logger.info(f'Model dir: {save_model_dir} is not exist!')
-            os.makedirs(save_model_dir)
-            logger.info('Create saved model success!')
-        
+    def save_model(self,save_model_dir):        
         try:
-            if isinstance(model,PreTrainedModel):
-                model.save_pretrained(save_model_dir)
+            if isinstance(self.model,PreTrainedModel):
+                self.model.save_pretrained(save_model_dir)
             else:
-                model_state=model.state_dict()
-                torch.save(model_state,os.path.join(save_model_dir,'model_state.pt'))
+                model_state=self.model.state_dict()
+                torch.save(model_state,os.path.join(save_model_dir,'model_state.pt'))       
             logger.info(f'Save model state to {save_model_dir} success!')
         except:
             logger.info('Save model failed... some things is wrong')
@@ -216,19 +225,25 @@ class Train_pipe:
         #check model dir is exist or not
         if not os.path.isdir(save_model_dir):
             raise FileNotFoundError("Saved model folder don't exists")
+
+        #load universal model config
+        with open(os.path.join(save_model_dir,'uni_config.json'),'r') as f_r:
+            model_config=json.load(f_r)
+        logger.info(f'Loading universal model config from {save_model_dir} success!')
+
         try:
             if issubclass(model,PreTrainedModel):
-                pretrain_model=model.from_pretrained(save_model_dir)
+                pretrain_model=model.from_pretrained(save_model_dir,**model_config)
                 logger.info(f'Loading pretrained model from {save_model_dir} success!')
         except:
             if isinstance(model,torch.nn.Module):
-                model_state=torch.load(save_model_dir)
-                pretrain_model=model.load_state_dict(model_state)
+                model_state=torch.load(os.path.join(save_model_dir,'model_state.pt'))
+                model.load_state_dict(model_state)
                 logger.info(f'Loading pretrained model from {save_model_dir} success!')
             else:
                 raise Exception('Load class of model incorrect!')
-
-        return cls(train_dataset,val_dataset,pretrain_model,args)
+    
+        return cls(train_dataset,val_dataset,model,model_config,args)
         
 
         

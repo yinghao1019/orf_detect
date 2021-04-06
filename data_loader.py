@@ -70,6 +70,8 @@ class BertDataset(Dataset):
                         if not subword:
                             subword=[self.tokenizer.unk_token]
                         subwords.extend(subword)
+            else:
+                subwords=['[empty]']
             #truncated subwords equal to max textLen
             max_textLen=self.args.max_textLen-1
             if len(subwords)>max_textLen:
@@ -165,7 +167,7 @@ class RnnDataset(Dataset):
             desc_topics=self.lda_model.get_document_topics(desc_bow)
             desc_topics=corpus2dense([desc_topics],num_terms=self.lda_model.num_topics,num_docs=1).T.tolist()[0]
         else:
-            desc_topics=[0.0]*self.lda_model.num_topicsimport 
+            desc_topics=[0.0]*self.lda_model.num_topics
 
         #convert title to index
         if example.title:
@@ -285,8 +287,8 @@ def load_and_cacheEamxples(args,tokenizer,mode):
 
     #build file path
     file_path=os.path.join(args.data_dir,args.task,
-                           'cached_{}_{}_process_data.zip'.format(
-                            args.task,mode))
+                           'cached_{}_{}_{}_data1.zip'.format(
+                            args.task,mode,args.pos_weights[0]))
     
     if os.path.isfile(file_path):
         logger.info(f'Loading feature from {file_path}')
@@ -294,7 +296,7 @@ def load_and_cacheEamxples(args,tokenizer,mode):
     else:
         logger.info(f'Build {mode} dataset!')
         #read
-        datasets=pd.read_csv(os.path.join(args.data_dir,args.task,mode,'data.csv'),encoding='utf-8')
+        datasets=pd.read_csv(os.path.join(args.data_dir,args.task,mode,'data1.csv'),encoding='utf-8')
         #external process for train dataset
         if mode=='train':
             #remove duplicate example
