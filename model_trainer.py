@@ -17,16 +17,15 @@ from tqdm import tqdm,trange
 logger=logging.getLogger(__name__)
 
 class Train_pipe:
-    def __init__(self,train_dataset,val_dataset,model,model_config,args):
+    def __init__(self,train_dataset,val_dataset,model,args):
         self.train_data=train_dataset
         self.val_data=val_dataset
         self.args=args
-        self.model_config=model_config
         self.model=model
         self.device=torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
         self.model.to(self.device)
         self.optimizer=AdamW(self.model.parameters(),args.lr,weight_decay=args.weight_decay)
-    def train_model(self):
+    def train_model(self,saved_config):
         #build save model dir
         save_model_dir=os.path.join(self.args.saved_dir,self.args.train_model_dir)
         #create model dir
@@ -37,8 +36,8 @@ class Train_pipe:
             os.makedirs(save_model_dir)
             logger.info('Create saved model success!')
         #save universal config
-        with open(os.path.join(save_model_dir,'uni_config.json'),'w') as f_w:
-            json.dump(self.model_config,f_w)
+        with open(os.path.join(save_model_dir,'model_config.json'),'w') as f_w:
+            json.dump(saved_config,f_w)
         logger.info(f'Save model universal config to {save_model_dir} success!')
 
         #build data loader
@@ -209,17 +208,19 @@ class Train_pipe:
 
     def save_model(self,save_model_dir):        
         try:
-            if isinstance(self.model,PreTrainedModel):
+            if self.args.used_model.startswith('bert'):
                 self.model.save_pretrained(save_model_dir)
-            else:
-                model_state=self.model.state_dict()
-                torch.save(model_state,os.path.join(save_model_dir,'model_state.pt'))       
+
+            model_state=self.model.state_dict()
+            torch.save(model_state,os.path.join(save_model_dir,'model_state.pt'))       
             logger.info(f'Save model state to {save_model_dir} success!')
         except:
             logger.info('Save model failed... some things is wrong')
 
     @classmethod
     def load_model(cls,model,train_dataset,val_dataset,args):
+
+        assert issubclass(model,torch.nn.Module),'the model class is incorrect'
         #build save model dir
         save_model_dir=os.path.join(args.saved_dir,args.train_model_dir)
         #check model dir is exist or not
@@ -227,23 +228,25 @@ class Train_pipe:
             raise FileNotFoundError("Saved model folder don't exists")
 
         #load universal model config
-        with open(os.path.join(save_model_dir,'uni_config.json'),'r') as f_r:
+        with open(os.path.join(save_model_dir,'model_config.json'),'r') as f_r:
             model_config=json.load(f_r)
         logger.info(f'Loading universal model config from {save_model_dir} success!')
 
         try:
-            if issubclass(model,PreTrainedModel):
-                pretrain_model=model.from_pretrained(save_model_dir,**model_config)
-                logger.info(f'Loading pretrained model from {save_model_dir} success!')
+            if args.used_model.startswith('bert'):
+                #build pretrain config
+                model_config['pretrain_path1']=os.path.join(save_model_dir,'job_bert')
+                model_config['pretrain_path2']=os.path.join(save_model_dir,'cp_bert')
+
+            #init model
+            model=model(**model_config)
+            model_state=torch.load(os.path.join(save_model_dir,'model_state.pt'))
+            model.load_state_dict(model_state)
+            logger.info(f'Loading pretrained model from {save_model_dir} success!')
         except:
-            if isinstance(model,torch.nn.Module):
-                model_state=torch.load(os.path.join(save_model_dir,'model_state.pt'))
-                model.load_state_dict(model_state)
-                logger.info(f'Loading pretrained model from {save_model_dir} success!')
-            else:
-                raise Exception('Load class of model incorrect!')
+            logger.info('Load pretrain model Failed!')
     
-        return cls(train_dataset,val_dataset,model,model_config,args)
+        return cls(train_dataset,val_dataset,model,args)
         
 
         

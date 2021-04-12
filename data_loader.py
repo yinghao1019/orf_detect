@@ -226,7 +226,7 @@ class process_data:
         lower_edu=1 if 0<require_edu<self.args.edu_threshold else 0
         lower_job=1 if 0<require_job<self.args.job_threshold else 0
         meta_data=[has_descLink,require_edu,require_job,lower_edu,lower_job]
-        meta_data+=[data.has_company_logo,data.telecommuting,data.has_questions]
+        meta_data+=[data.has_company_logo,data.telecommuting]
         #tokenized text
         cp_profile=doc_process(self.nlp_pipe(cp_profile.lower())) if cp_profile else []
         desc=doc_process(self.nlp_pipe(desc.lower())) if desc else []
