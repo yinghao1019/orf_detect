@@ -171,7 +171,8 @@ class RnnDataset(Dataset):
 
         #convert title to index
         if example.title:
-            item=[self.item_vocab.index(w) if w in self.item_vocab else self.item_vocab.index('[UNK]') for w in example.title]
+            item=[self.item_vocab.index(w) if w in self.item_vocab else self.item_vocab.index('[UNK]') 
+                  for w in example.title]
         else:
             item=[self.item_vocab.index('[PAD]')]
         #fetch other data
@@ -225,7 +226,7 @@ class process_data:
         lower_edu=1 if 0<require_edu<self.args.edu_threshold else 0
         lower_job=1 if 0<require_job<self.args.job_threshold else 0
         meta_data=[has_descLink,require_edu,require_job,lower_edu,lower_job]
-        meta_data+=[data.has_company_logo,data.telecommuting]
+        meta_data+=[data.has_company_logo,data.telecommuting,data.has_questions]
         #tokenized text
         cp_profile=doc_process(self.nlp_pipe(cp_profile.lower())) if cp_profile else []
         desc=doc_process(self.nlp_pipe(desc.lower())) if desc else []
@@ -287,7 +288,7 @@ def load_and_cacheEamxples(args,tokenizer,mode):
 
     #build file path
     file_path=os.path.join(args.data_dir,args.task,
-                           'cached_{}_{}_{}_data2.zip'.format(
+                           'cached_{}_{}_{}_data.zip'.format(
                             args.task,mode,args.pos_weights[0]))
     
     if os.path.isfile(file_path):
@@ -296,7 +297,7 @@ def load_and_cacheEamxples(args,tokenizer,mode):
     else:
         logger.info(f'Build {mode} dataset!')
         #read
-        datasets=pd.read_csv(os.path.join(args.data_dir,args.task,mode,'data2.csv'),encoding='utf-8')
+        datasets=pd.read_csv(os.path.join(args.data_dir,args.task,mode,'data.csv'),encoding='utf-8')
         #external process for train dataset
         if mode=='train':
             #remove duplicate example

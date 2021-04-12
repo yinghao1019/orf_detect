@@ -16,15 +16,14 @@ def main(args):
     #load model & tokenizer
     if args.used_model.startswith('bert'):
         pretrained_name=MODEL_PATH[args.used_model]#get pretrain type
+        tokenizer=MODEL_CLASSES[pretrained_name][1].from_pretrained(pretrained_name)
+        
 
-        model_config=MODEL_CLASSES[args.used_model][0].from_pretrained(pretrained_name)
-        tokenizer=MODEL_CLASSES[args.used_model][1].from_pretrained(pretrained_name)
-
-        uni_config=MODEL_CLASSES[args.used_model][3]
+        uni_config=MODEL_CLASSES[pretrained_name][0]
         uni_config['item_input_dim']=len(items_vocab)
         uni_config['pos_weight']=args.pos_weights
-        uni_config['maxLen']=args.max_textLen       
-        model=MODEL_CLASSES[args.used_model][2].from_pretrained(pretrained_name,config=model_config,**uni_config)
+        uni_config['pretrain_path1']=pretrained_name
+        uni_config['pretrain_path2']=pretrained_name
         
         #add spec vocab to extend vocab num
         logger.info(f'Vocab num that before add new spec token:{len(tokenizer)}')
@@ -34,8 +33,10 @@ def main(args):
         logger.info(f'Added vocab:{tokenizer.get_added_vocab()}')
         logger.info(f'Vocab num that after add new spec token:{len(tokenizer)}')
         #extend model input dim
-        model.resize_token_embeddings(len(tokenizer))
-        
+        uni_config['vocab_num']=len(tokenizer)
+        #build model
+        model=MODEL_CLASSES[pretrained_name][2](**uni_config)
+
     elif args.used_model.startswith('rnn'):
 
         pretrained_name=MODEL_PATH[args.used_model]#get pretrain type
@@ -60,18 +61,16 @@ def main(args):
     if args.do_train:
         logger.info('Start to train model !')
         #build training pipeline
-        pipe=Train_pipe(train_data,val_data,model,uni_config,args)
-        pipe.train_model()
+        pipe=Train_pipe(train_data,val_data,model,args)
+        pipe.train_model(uni_config)
 
         #evalutae model performance separately
         pipe.eval_model(train_data)
     if args.do_eval:
         logger.info('Start to eval model !')
-        if args.used_model.startswith('rnn'):
-            pipe=Train_pipe.load_model(model,train_data,val_data,args)
-        else:
-            pretrain_class=MODEL_CLASSES[args.used_model][2]
-            pipe=Train_pipe.load_model(pretrain_class,train_data,val_data,args)
+        pretrained_name=MODEL_PATH[args.used_model]
+        pretrain_class=MODEL_CLASSES[pretrained_name][2]
+        pipe=Train_pipe.load_model(pretrain_class,train_data,val_data,args)   
         pipe.eval_model(val_data)
 
 if __name__=='__main__':
@@ -81,7 +80,7 @@ if __name__=='__main__':
                         help='Root dir path for save data.Default .\Data')
 
     parser.add_argument('--saved_dir',type=str,default='saved_model',help='')
-    parser.add_argument('--process_dir',type=str,default='process_model',help='')
+    parser.add_argument('--process_dir',type=str,default='process\model',help='')
     parser.add_argument('--lda_model_file',type=str,default='topic_model\lda_model',
                         help='File path for pretrain lda model.')
     parser.add_argument('--lda_vocab_file',type=str,default='topic_model\lda_vocab.pkl',
