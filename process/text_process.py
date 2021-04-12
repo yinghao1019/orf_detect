@@ -143,5 +143,6 @@ def corpus_process(data,nlp_pipe):
     #using nlp_pipeline to handle text
     data=list(map(lambda x:nlp_pipe(x.lower()) ,data))
     corpus=list(map(doc_process,data))
-    logger.info('Top 3 data {}'.format(corpus[:3]))
+    logger.info('Process num:{}'.format(len(corpus)))
+    
     return corpus

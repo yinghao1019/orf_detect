@@ -6,12 +6,12 @@ import logging
 import argparse
 import string
 from collections import Counter
-from gensim.models.fasttext import FastText
+from gensim.models import keyedvectors,fasttext
 from gensim.corpora.dictionary import Dictionary
 import sys
 sys.path.append(os.getcwd())# add path to module search path
 #customize module
-from utils import load_special_tokens,set_log_config,load_ftQuery
+from utils import load_special_tokens,set_log_config
 from text_process import corpus_process,en_stopwords,text_clean
 logger = logging.getLogger(__name__)
 
@@ -22,17 +22,6 @@ def combine_data(data,col_names):
     df=data.loc[:,col_names].values.reshape(-1)
     return df[nonZero_df]
 
-def pretrain_embed_model(train_corpus,vector_dim,min_freq,model_type,max_vocab,
-                         negative=10,epochs=7):
-    #training fastText model
-    embed=1 if model_type=='skip-gram' else 0
-    model=FastText(min_count=min_freq,sg=embed,vector_size=vector_dim,max_vocab_size=max_vocab,
-                  negative=negative,epochs=epochs)
-    model.build_vocab(train_corpus)
-    model.train(train_corpus,total_examples=len(train_corpus),epochs=model.epochs)
-    logger.info('Train pretrain embed model success!')
-
-    return model
 
 def build_vocab(corpus,spec_tokens,max_size,min_freq,speical_first):
     #count vocab
@@ -78,7 +67,7 @@ def create_embeds(vocab,model,embed_path,args):
     try:
         item=0
         for w,w_id in vocab.items():
-            vocab_embed[w_id]=model.wv[str(w)]
+            vocab_embed[w_id]=model[w]
             item+=1
             if item%500==0:
                 logger.info(f'Already convert {item} word to embed success!')
@@ -110,22 +99,31 @@ def create_embeds(vocab,model,embed_path,args):
 def main(args):
     #set path variable
     data_path=os.path.join(args.data_dir,args.task)
-    #load nlp model
+    embed_path=f'{args.model_type}_{args.embed_type}_{args.corpora}_{args.embed_dim}.kv'
+    embed_path=os.path.join('.\process\model\embed_model',embed_path)
+
+    #load model for nlp pipeline & embed
     spacy.require_gpu()
     en_nlp=spacy.load(args.model_type)
-    
+    special_tokens=load_special_tokens(args)
+    logger.info(f'loading pretrain embed model from {embed_path}')
+    if os.path.isfile(embed_path):
+        if args.embed_type=='orig':
+            kv_model=keyedvectors.KeyedVectors.load(embed_path)
+        elif args.embed_type=='fastText':
+            kv_model=fasttext.FastTextKeyedVectors.load(embed_path)
+    else:
+        raise FileNotFoundError('Embed file path incorrect!')
+
     # read data
     df = pd.read_csv(os.path.join(data_path,args.mode,'data.csv'),encoding=args.encode_format)
-    special_tokens=load_special_tokens(args)
-    pretrain_query=load_ftQuery(args)#load fastText index query
-
     df = df.drop_duplicates(subset=['description','title'],keep=False)
+
     logger.info(f'Read data from {os.path.join(data_path,args.mode)} success!')
     logger.info(f'df shape:{df.shape}')
     logger.info(f'Special token: {special_tokens} nums: {len(special_tokens)}')
 
-    #selected columns and build corpus with using nlp pipe
-    #corpus shape = list of list of token
+    #build corpous using nlp pipeline
     logger.info('****Start to build vocab****')
 
     if args.select_context_name:
@@ -154,13 +152,9 @@ def main(args):
         context_dict.save(args.lda_vocab_file)
 
         logger.info('Build pretrain embed model..')
-        #build corpus(list of sents)
-        sents=[[w.lower() for w in sent] for doc in context_corpus for sent in doc]
         #build embed model
-        embed_model=pretrain_embed_model(sents,args.embed_dim,2,
-                                        args.embed_model,100000)
-        logger.info('Create item_vocab embed !')
-        create_embeds(context_dict.token2id,embed_model,data_path,args)
+        logger.info('Create item_vocab pretrain embed!')
+        create_embeds(context_dict.token2id,kv_model,data_path,args)
 
     if args.select_item_name:
         
@@ -180,13 +174,10 @@ def main(args):
         logger.info(f'top 15 item vocab : {item_vocab[:15]}')
         #save item vocab
         save_vocab_file(item_vocab,data_path,args.str_vocab_file)
-
-        logger.info('Build pretrain embed model..')
-        embed_model=pretrain_embed_model(item_corpus,args.embed_dim,args.min_item_freq,
-                                        args.embed_model,30000)
-        logger.info('Create item_vocab embed !')
+        
+        logger.info('Start to create item_vocab embed')
         #create item embed vector
-        create_embeds(item_token2id,embed_model,data_path,args)
+        create_embeds(item_token2id,kv_model,data_path,args)
     
 
 
@@ -202,7 +193,7 @@ if __name__ == '__main__':
     parser.add_argument('--lda_vocab_file',type=str,default=r'.\saved_model\process_model\topic_model\lda_vocab.pkl',
                         help='The file name for lda vocab')
     parser.add_argument('--max_item_size',type=int,default=30000,help='The max vocab size for title.')
-    parser.add_argument('--min_item_freq',type=int,default=2,help='The minimum frequency needed to include a token in title vocab.')
+    parser.add_argument('--min_item_freq',type=int,default=5,help='The minimum frequency needed to include a token in title vocab.')
     parser.add_argument('--max_context_vocab',type=int,default=30000,help='Max vocab size for context word')
     parser.add_argument('--spec_first',action='store_true',
                         help='Whether to add special tokens into the vocabulary at first.If not call,special token will add into last')
@@ -215,7 +206,7 @@ if __name__ == '__main__':
     parser.add_argument('--model_type',type=str,default='en_core_web_md',help='The model name for nlp process.')
 
     parser.add_argument('--embed_dim',type=int,default=300,help='The pretrain embed model dim.')
-    parser.add_argument('--embed_model',type=str,default='skip-gram',choices=['skip-gram','cbow'],help='The pretrain embed model.')
+    parser.add_argument('--embed_model',type=str,default='skip-gram',choices=['skp','cbw'],help='The pretrain embed model.')
 
     args=parser.parse_args()
     set_log_config()

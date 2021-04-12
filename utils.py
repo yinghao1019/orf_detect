@@ -1,6 +1,6 @@
 from sklearn.metrics import confusion_matrix,recall_score,precision_score,f1_score,balanced_accuracy_score
-from model.modeling_orfBert import BertFakeDetector
 from model.modeling_orfRnn import RnnFakeDetector
+from model.modeling_orfBert import Bert_Fakedetector
 from model.utils_model import model_uniConfig
 from transformers import BertConfig,BertTokenizer
 
@@ -18,11 +18,6 @@ def load_special_tokens(args):
 def set_log_config():
     logging.basicConfig(format='%(asctime)s - %(module)s - %(levelname)s - %(message)s',
                         datefmt='%m/%d/%Y %H:%M:%S',level=logging.INFO)
-
-def load_ftQuery(args):
-    with open(os.path.join(args.data_dir,args.task,r'fastText/wiki-news-querys.json'),'r',encoding='utf-8') as f_r:
-        ft_query=json.load(f_r)
-    return ft_query
 
 def load_item_vocab(args):
     return [w.strip() for w in open(os.path.join(args.data_dir,args.task,'item_vocab.txt'),'r',encoding='utf-8')]
@@ -65,7 +60,7 @@ def count_parameters(m):
 
 
 MODEL_CLASSES={
-    'bert-dnn':(BertConfig,BertTokenizer,BertFakeDetector,model_uniConfig),
+    'bert-base-uncased':(model_uniConfig,BertTokenizer,Bert_Fakedetector),
     'gru-attn':(model_uniConfig,load_text_vocab,RnnFakeDetector),
 }
 MODEL_PATH={
