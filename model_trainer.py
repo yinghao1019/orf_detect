@@ -235,8 +235,7 @@ class Train_pipe:
         try:
             if args.used_model.startswith('bert'):
                 #build pretrain config
-                model_config['pretrain_path1']=os.path.join(save_model_dir,'job_bert')
-                model_config['pretrain_path2']=os.path.join(save_model_dir,'cp_bert')
+                model_config['pretrain_path']=os.path.join(save_model_dir,'bert')
 
             #init model
             model=model(**model_config)

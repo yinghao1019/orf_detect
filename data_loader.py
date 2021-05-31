@@ -282,9 +282,8 @@ def balanced_process(dataset,class_weight,labels_name):
 def load_and_cacheEamxples(args,tokenizer,mode):
     #build path variable
     data_path=os.path.join(args.data_dir,args.task)
-    process_path=os.path.join(args.saved_dir,args.process_dir)
-    lda_model_path=os.path.join(process_path,args.lda_model_file)
-    lda_vocab_path=os.path.join(process_path,args.lda_vocab_file)
+    lda_model_path=os.path.join(args.process_dir,args.lda_model_file)
+    lda_vocab_path=os.path.join(args.process_dir,args.lda_vocab_file)
 
     #build file path
     file_path=os.path.join(args.data_dir,args.task,

@@ -22,8 +22,7 @@ def main(args):
         uni_config=MODEL_CLASSES[pretrained_name][0]
         uni_config['item_input_dim']=len(items_vocab)
         uni_config['pos_weight']=args.pos_weights
-        uni_config['pretrain_path1']=pretrained_name
-        uni_config['pretrain_path2']=pretrained_name
+        uni_config['pretrain_path']=pretrained_name
         
         #add spec vocab to extend vocab num
         logger.info(f'Vocab num that before add new spec token:{len(tokenizer)}')
@@ -54,9 +53,6 @@ def main(args):
     train_data=load_and_cacheEamxples(args,tokenizer,'train')
     val_data=load_and_cacheEamxples(args,tokenizer,'test')
     
-    
-    
-
     #training model
     if args.do_train:
         logger.info('Start to train model !')
@@ -72,7 +68,6 @@ def main(args):
         pretrain_class=MODEL_CLASSES[pretrained_name][2]
         pipe=Train_pipe.load_model(pretrain_class,train_data,val_data,args)   
         pipe.eval_model(val_data)
-
 if __name__=='__main__':
     parser=argparse.ArgumentParser()
 
@@ -80,7 +75,7 @@ if __name__=='__main__':
                         help='Root dir path for save data.Default .\Data')
 
     parser.add_argument('--saved_dir',type=str,default='saved_model',help='')
-    parser.add_argument('--process_dir',type=str,default='process\model',help='')
+    parser.add_argument('--process_dir',type=str,default=r'.\process\model',help='')
     parser.add_argument('--lda_model_file',type=str,default='topic_model\lda_model',
                         help='File path for pretrain lda model.')
     parser.add_argument('--lda_vocab_file',type=str,default='topic_model\lda_vocab.pkl',
