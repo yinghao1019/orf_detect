@@ -64,17 +64,19 @@ def create_embeds(vocab,model,embed_path,args):
     logger.info(f'vocab nums:{vocab_num} \t top5 word pair:{list(vocab.items())[:5]}')
     logger.info(f'Embed vector shape:{vocab_embed.shape}')
     #get pretrain emebd_dim
-    try:
-        item=0
-        for w,w_id in vocab.items():
-            vocab_embed[w_id]=model[w]
+    item=0
+    oov_words=[]
+    for w,w_id in vocab.items():
+        try:
+            vocab_embed[w_id]=model[str(w)]
             item+=1
             if item%500==0:
                 logger.info(f'Already convert {item} word to embed success!')
-        logger.info('show pretrain embed:\n{}'.format(vocab_embed[20:23]))   
-    
-    except:
-        logger.info('Create pretrain embed error!')
+        except KeyError:
+            logger.info(f'The {w_id} word {w} is not in pretrain model!')
+            vocab_embed[w_id]=np.random.normal(0,0.1,args.embed_dim)
+            oov_words.append(w)
+    logger.info('show oov word of pretrain model: {}'.format(len(oov_words)))   
             
 
     #save vector to disk
@@ -86,7 +88,7 @@ def create_embeds(vocab,model,embed_path,args):
 
     try:
         #set path
-        vocab_file_path=f'fastText_{args.embed_dim}d_{vocab_num}_embed'
+        vocab_file_path=f'{args.model_type}_{args.embed_type}_{args.embed_dim}d_{vocab_num}_embed'
         #save!
         np.save(os.path.join(save_dir,vocab_file_path),vocab_embed)
         logger.info(f'Success save pretrain vector to {save_dir}')
@@ -99,18 +101,18 @@ def create_embeds(vocab,model,embed_path,args):
 def main(args):
     #set path variable
     data_path=os.path.join(args.data_dir,args.task)
-    embed_path=f'{args.model_type}_{args.embed_type}_{args.corpora}_{args.embed_dim}.kv'
-    embed_path=os.path.join('.\process\model\embed_model',embed_path)
+    embed_path=f'{args.model_type}_{args.embed_type}_{args.corpora}_{args.embed_dim}d.kv'
+    embed_path=os.path.join('./process/model/embed_model',embed_path)
 
     #load model for nlp pipeline & embed
     spacy.require_gpu()
-    en_nlp=spacy.load(args.model_type)
+    en_nlp=spacy.load(args.nlp_type)
     special_tokens=load_special_tokens(args)
     logger.info(f'loading pretrain embed model from {embed_path}')
     if os.path.isfile(embed_path):
-        if args.embed_type=='orig':
+        if args.model_type=='orig':
             kv_model=keyedvectors.KeyedVectors.load(embed_path)
-        elif args.embed_type=='fastText':
+        elif args.model_type=='ft':
             kv_model=fasttext.FastTextKeyedVectors.load(embed_path)
     else:
         raise FileNotFoundError('Embed file path incorrect!')
@@ -125,9 +127,7 @@ def main(args):
 
     #build corpous using nlp pipeline
     logger.info('****Start to build vocab****')
-
     if args.select_context_name:
-
         logger.info(f'Start to build context vocab for {args.select_context_name}!')
 
         #text prepare
@@ -190,7 +190,7 @@ if __name__ == '__main__':
 
     parser.add_argument('--str_vocab_file',type=str,default='item_vocab.txt',help='The file name for save item vocab')
     parser.add_argument('--context_vocab_file',type=str,default='jobText_vocab.txt',help='The file name for save context vocab.')
-    parser.add_argument('--lda_vocab_file',type=str,default=r'.\saved_model\process_model\topic_model\lda_vocab.pkl',
+    parser.add_argument('--lda_vocab_file',type=str,default=r'.\model\topic_model\lda_vocab.pkl',
                         help='The file name for lda vocab')
     parser.add_argument('--max_item_size',type=int,default=30000,help='The max vocab size for title.')
     parser.add_argument('--min_item_freq',type=int,default=5,help='The minimum frequency needed to include a token in title vocab.')
@@ -203,10 +203,12 @@ if __name__ == '__main__':
     parser.add_argument('--select_item_name',type=str,default=None,help='select data coulmn for build item vocab')
 
     parser.add_argument('--encode_format',type=str,default='utf-8',help="The read data's encoding format")
-    parser.add_argument('--model_type',type=str,default='en_core_web_md',help='The model name for nlp process.')
+    parser.add_argument('--nlp_type',type=str,default='en_core_web_md',help='The model name for nlp process.')
+    parser.add_argument('--model_type',type=str,default='ft',help='The model name for pretrain embed model.')
+    parser.add_argument('--corpora',type=str,default='wiki',help='Corpora name for train word embed.')
 
     parser.add_argument('--embed_dim',type=int,default=300,help='The pretrain embed model dim.')
-    parser.add_argument('--embed_model',type=str,default='skip-gram',choices=['skp','cbw'],help='The pretrain embed model.')
+    parser.add_argument('--embed_type',type=str,default='skg',choices=['skg','cbw'],help='The class of embed model.')
 
     args=parser.parse_args()
     set_log_config()

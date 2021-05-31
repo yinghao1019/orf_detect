@@ -13,7 +13,7 @@ from gensim.corpora.dictionary import Dictionary
 import sys
 sys.path.append(os.getcwd())
 #customize module
-from utils import load_special_tokens,set_log_config,load_ftQuery
+from utils import load_special_tokens,set_log_config
 
 
 logger = logging.getLogger(__name__)
@@ -33,7 +33,7 @@ asc_p = re.compile(r'[^\w\.\-;\?!,\+\$/\>\<\[\]]+', flags=re.ASCII)
 punc_p = re.compile(r'([_\*\=-]+)|(\.{2,})')
 note_p=re.compile(r'\(.+?\)')
 emphasize_p = re.compile(r'<(em|strong|b)>')
-captial_p=re.compile(r"([a-z])([A-Z])")
+captial_p=re.compile(r"([a-z])([A-Z]\w)")
 money_p = re.compile(r'\$\d+')
 alpha_p=re.compile(r'\[?[a-zA-Z_]+\]?')
 #define rule based func
@@ -113,7 +113,7 @@ def count_links(text):
 def sent_process(sent):
   #fetch sent start position
   sent_start=sent.start
-  orig_sent=[t.lemma_ for t in sent]
+  orig_sent=[t.lemma_.lower() for t in sent]
 
   #find all entity for sent and replace origin text phrase 
   #reversed to not modify the offsets of other entities when substituting

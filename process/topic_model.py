@@ -10,11 +10,11 @@ import seaborn as sns
 import logging
 import os
 import argparse
-from text_process import corpus_process
+from text_process import corpus_process,en_stopwords
 import sys
 sys.path.append(os.getcwd())
 #customize module
-from utils import load_special_tokens,set_log_config,load_ftQuery
+from utils import load_special_tokens,set_log_config
 
 logger = logging.getLogger(__name__)
 def choose_topic(bow_corpus,corpus,topics,vocab,chunksize, passes,eval_mode,workers):
@@ -58,7 +58,7 @@ def main(args):
     #selected columns
     corpus=corpus.loc[:,args.select_column].dropna().values.tolist()
     #corpus process
-    corpus=corpus_process(corpus,en_nlp)
+    corpus=[[w for sent in doc for w in sent if w not in en_stopwords] for doc in corpus_process(corpus,en_nlp)]
     logger.info('Process data success!')
     #convert to bow
     corpus_bow=[context_vocab.doc2bow(doc) for doc in corpus]
@@ -110,7 +110,7 @@ if __name__=='__main__':
     parser.add_argument('--task',type=str,default='fakeJob',help='The training Model task.')
     parser.add_argument('--mode',type=str,default='train',help='The data class.')
     parser.add_argument('--lda_file_path',type=str,default='lda_model',help='The prefix path name for saveing topic model.')
-    parser.add_argument('--save_dir',type=str,default=r'.\saved_model\process_model',help='The parent dir for save topic model.')
+    parser.add_argument('--save_dir',type=str,default=r'.\process\model',help='The parent dir for save topic model.')
     parser.add_argument('--model_class',type=str,default='topic_model',help='')
     parser.add_argument('--vocab_file',type=str,default='lda_vocab.pkl',help='The vocabulary file path for saved model')
     parser.add_argument('--bow_file',type=str,default='lda_corpus.mm',help='The file path for bow corpus')
