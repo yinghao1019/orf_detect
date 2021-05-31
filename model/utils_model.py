@@ -3,8 +3,8 @@ from torch import nn
 from torch.nn import functional as F
 import numpy as np
 #Universal model params config
-model_uniConfig={"embed_dim":128,'hid_dim':512,"fc_dim":512,"meta_dim":12,
-              "output_dim":1,"dropout_rate":0.1,"using_pretrain_weight":False,
+model_uniConfig={"embed_dim":128,'hid_dim':256,"fc_dim":256,"meta_dim":13,
+              "output_dim":1,"dropout_rate":0.3,"using_pretrain_weight":True,
               }
 
 class fake_classifier(nn.Module):
@@ -126,7 +126,7 @@ class item_extractor(nn.Module):
 
         #build embed layer
         if using_pretrain_weight:
-            item_embeds=np.load(r'./Data/fakeJob/vocab_embed/fastText_128d_1312_embed.npy')
+            item_embeds=np.load(r'./Data/fakeJob/vocab_embed/orig_cbw_128d_785_embed.npy')
             item_embeds=torch.from_numpy(item_embeds)
             self.embed_layer=nn.Embedding.from_pretrained(item_embeds,freeze=False,
                                                           padding_idx=padding_idx)

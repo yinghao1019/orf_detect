@@ -141,23 +141,20 @@ class Bert_layer(BertPreTrainedModel):
                 return self.tanh(hiddens)
 
 class Bert_Fakedetector(nn.Module):
-    def __init__(self,pretrain_path1,pretrain_path2,vocab_num,item_input_dim,
+    def __init__(self,pretrain_path,vocab_num,item_input_dim,
                      hid_dim,embed_dim,fc_dim,meta_dim,output_dim,pos_weight,
                      padding_idx=0,using_pretrain_weight=True,dropout_rate=0.2):
         super(Bert_Fakedetector,self).__init__()
 
         #build pretrain bert layer
-        self.job_bert=Bert_layer.from_pretrained(pretrain_path1,hid_dim=hid_dim)
-        self.cp_bert=Bert_layer.from_pretrained(pretrain_path2,hid_dim=hid_dim)
-        self.job_bert.resize_token_embeddings(vocab_num)
-        self.cp_bert.resize_token_embeddings(vocab_num)
+        self.bert=Bert_layer.from_pretrained(pretrain_path,hid_dim=hid_dim)
+        self.bert.resize_token_embeddings(vocab_num)
+        
         #build other model
         self.item_model=item_extractor(item_input_dim,embed_dim,padding_idx=padding_idx,
                                        using_pretrain_weight=using_pretrain_weight)
-        self.item_attn_layer=Attentioner(embed_dim,hid_dim,hid_dim,hid_dim)
         self.context_layer=nn.Linear(hid_dim*2,hid_dim)
-        self.item_cat=nn.Linear(embed_dim+hid_dim,hid_dim)
-        self.fake_model=fake_classifier(hid_dim*2+meta_dim,fc_dim,output_dim,2)
+        self.fake_model=fake_classifier(hid_dim+embed_dim+meta_dim,fc_dim,output_dim,2)
 
         #build other criterion
         self.tanh=nn.Tanh()
@@ -177,30 +174,25 @@ class Bert_Fakedetector(nn.Module):
 
         #get bert embed 
         #xx_contexts=[Bs,hid_dim],xx_hiddens=[Bs,seqLen,bert_hid]
-        job_hiddens=self.job_bert(token_ids=job_tokens,mask_ids=job_masks,
+        job_hiddens=self.bert(token_ids=job_tokens,mask_ids=job_masks,
                                  seg_ids=job_segs)
-        cp_hiddens=self.cp_bert(token_ids=cp_tokens,mask_ids=cp_masks,
+        cp_hiddens=self.bert(token_ids=cp_tokens,mask_ids=cp_masks,
                                 seg_ids=cp_segs)
         
         #compute item attention with job
         #items=[Bs,embed_dim]
         #item_attened=[Bs,hid_dim]
         items=self.item_model(title)
-        item_attened=self.item_attn_layer(items,job_hiddens,job_hiddens)
 
         #concat job & cp layer
         #contexts=[Bs,hid_dim]
         contexts=self.context_layer(torch.cat((job_hiddens.mean(dim=1),cp_hiddens.mean(dim=1)),1))
         contexts=self.dropout(self.leakyRelu(contexts))
 
-        #meta_hiddens=[Bs,hid_dim]
-        item_hiddens=torch.cat((items,item_attened),dim=1)
-        item_hiddens=self.item_cat(item_hiddens)
-
         #feed all hiddens to fake classifier
         #hiddens=[Bs,hid_dim*3]
         #output_logitics=[Bs,1]
-        hiddens=torch.cat((contexts,item_hiddens,self.bn(meta_data)),1)
+        hiddens=torch.cat((contexts,items.float(),self.bn(meta_data)),1)
         output_logitics=self.fake_model(hiddens)
 
         #compute loss
@@ -212,19 +204,16 @@ class Bert_Fakedetector(nn.Module):
 
     def save_pretrained(self,save_model_dir):
         #build save xxbert dir
-        cp_bdir=os.path.join(save_model_dir,'cp_bert')
-        job_bdir=os.path.join(save_model_dir,'job_bert')
+        bdir=os.path.join(save_model_dir,'bert')
         #check whether sub dir exist or not
-        if os.path.isdir(job_bdir):
+        if os.path.isdir(bdir):
             logger.info('Sub directory for save bert state is exists!!')
         else:
             logger.info('Sub directory for save bert state not exists!So create new')
-            os.makedirs(cp_bdir)
-            os.makedirs(job_bdir)
-            logger.info(f'Create new dir for {job_bdir} & {cp_bdir}')
+            os.makedirs(bdir)
+            logger.info(f'Create new dir for {bdir}')
         try:
-            self.job_bert.save_pretrained(job_bdir)
-            self.cp_bert.save_pretrained(cp_bdir)
+            self.bert.save_pretrained(bdir)
             logger.info(f'Save bert model state success!')
         except:
             logger.info(f'Save bert model state succes Failed!')
