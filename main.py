@@ -116,7 +116,7 @@ if __name__ == '__main__':
                         default=3, help='Lower job threshold.')
     parser.add_argument('--pos_weights', type=int, nargs='+',
                         default=[4.0], help='a weight of positive examples.')
-    parser.add_argument('--max_textLen', type=int, default=300,
+    parser.add_argument('--max_textLen', type=int, default=64,
                         help='Set max word num After tokenize text.')
     parser.add_argument('--cp_sentNum', type=int, default=7,
                         help='Set max seq len After tokenize company_profile.')

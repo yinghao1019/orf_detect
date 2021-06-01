@@ -230,7 +230,7 @@ if __name__ == '__main__':
 
     parser.add_argument('--encode_format',type=str,default='utf-8',help="The read data's encoding format")
     parser.add_argument('--nlp_type',type=str,default='en_core_web_md',help='The model name for nlp process.')
-    parser.add_argument('--model_type',type=str,default='ft',help='The model name for pretrain embed model.')
+    parser.add_argument('--model_type',type=str,default='orig',help='The model name for pretrain embed model.')
     parser.add_argument('--corpora',type=str,default='wiki',help='Corpora name for train word embed.')
 
     parser.add_argument('--embed_dim',type=int,default=300,help='The pretrain embed model dim.')
