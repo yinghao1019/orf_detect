@@ -18,7 +18,7 @@ def load_special_tokens(args):
     This func read speical_tokens.txt in Data/fakejob to load NER tag list.
 
     Args:
-     args(ArgumentParser object):This args object should contain data_dir,task attr.
+     args:This ArgumentParser object should contain data_dir,task attr.
     
     Returns:
       list of str:the token for NER
@@ -34,7 +34,7 @@ def load_item_vocab(args):
     This func read item_vocab.txt in Data/fakejob to load title's vocab of ORF datasets.
 
     Args:
-     args(ArgumentParser object):This args object should contain data_dir,task attr.
+     args:This ArgumentParser object should contain data_dir,task attr.
     
     Returns:
       list of str: the token for title's vocab
@@ -46,7 +46,7 @@ def load_text_vocab(args):
     This func read jobText_vocab.txt in Data/fakejob to load text vocab of ORF datasets.
 
     Args:
-     args(ArgumentParser object):This args object should contain data_dir,task attr.
+     args:This ArgumentParser object should contain data_dir,task attr.
     
     Returns:
       list of str: the token for text's vocab that contain desc,requirement,profile,benefits
@@ -58,7 +58,7 @@ def load_edu_dict(args):
     This func read edu_level.json in Data/fakejob to load edu mapping dict.
 
     Args:
-     args(ArgumentParser object):This args object should contain data_dir,task attr.
+     args:This ArgumentParser object should contain data_dir,task attr.
     
     Returns:
       dict : The index mapping for edu level name. 
@@ -72,7 +72,7 @@ def load_job_dict(args):
     This func read job_level.json in Data/fakejob to load edu mapping dict.
 
     Args:
-     args(ArgumentParser object):This args object should contain data_dir,task attr.
+     args:This ArgumentParser object should contain data_dir,task attr.
     
     Returns:
       dict : The index mapping for job level name. 
@@ -109,7 +109,7 @@ def set_rndSeed(args):
     Set rnadom seed to control random(builtin,numpy,torch,cuda,cudnn)
 
     Args:
-     args(ArgumentParser object):This args object should contain random_seed     
+     args:This ArgumentParser object should contain random_seed     
     """
     random.seed(args.random_seed)
     np.random.seed(args.random_seed)

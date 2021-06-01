@@ -24,6 +24,23 @@ def combine_data(data,col_names):
 
 
 def build_vocab(corpus,spec_tokens,max_size,min_freq,speical_first):
+    """
+    Used to create vocab dictionary(word index pair).
+    In this process,set max vocab num & min_freq to filter word.
+    also additionally add NER token to vocab.
+
+    Args:
+     corpus(list of text):The corpus for collect vocab.
+     spec_tokens(list of token):Additional token that you want to add.
+     max_size(int):The max vocab num.
+     min_freq(int):The word in corpus must be higher than this freq
+     special_first(bollean):Whether to add special token to first pos or not.
+
+    Returns:
+     list of str: collected vocab list
+     dict: The token mapping index.
+     
+    """
     #count vocab
     vocab_count=Counter([w for text in corpus for w in text])
     #select top max_size word into vocab
@@ -54,7 +71,16 @@ def save_vocab_file(vocab,data_dir,file_path):
     except:
         logger.info('vocab File saved failed!')
 
-def create_embeds(vocab,model,embed_path,args):    
+def create_embeds(vocab,model,embed_path,args):
+    """
+    Used for build pretrain embed vector.
+
+    Args:
+     vocab(dict):word to index mapping dict.
+     model(gensim word2vec):The pretrain embed model
+     embed_path:The dir for saving vocab embed vector.
+
+    """
     #get vocab nums
     vocab_num=len(vocab.keys())
     #build storage vocab embed array

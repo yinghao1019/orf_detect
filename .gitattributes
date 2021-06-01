@@ -3,3 +3,4 @@ Data/fakeJob/fastText/wiki-news-300d-1M-subword.vec.zip filter=lfs diff=lfs merg
 Data/fakejob/*.csv filter=lfs diff=lfs merge=lfs -text
 Data/fakejob/train/*.csv filter=lfs diff=lfs merge=lfs -text
 Data/fakejob/test/*.csv filter=lfs diff=lfs merge=lfs -text
+process/model/embed_model/*.zip filter=lfs diff=lfs merge=lfs -text
