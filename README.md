@@ -3,15 +3,15 @@
 - python>=3.7
 - torch==1.5.1
 - transformers==4.3.0
-- spacy==
-- nltk==
-- gensim==
-  
+- spacy==3.0.5
+- nltk==3.5
+- gensim==4.0.0 
+
 ## Dataset
 |       | Train  | Test| 
 | ----- | ------ | --- |  
 |ORF    | 11,949 |2,988| 
-
+- 
 
 ## Model Architecture  
   
